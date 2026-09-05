@@ -21,7 +21,8 @@ app.add_middleware(
 )
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-llm_model = genai.GenerativeModel('gemini-1.5-flash')
+# Using the latest 1.5 flash model to ensure no 404 errors
+llm_model = genai.GenerativeModel('gemini-3.1-flash-lite')
 embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 DB_URL = os.getenv("DATABASE_URL")
 
@@ -144,9 +145,7 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
 # --- 4. MAIN ROUTER ENDPOINT ---
 @app.post("/api/blinkit-assistant")
 async def blinkit_assistant(request: RecipeRequest):
-    """Classifies user intent and routes to the correct logic pipeline"""
-    
-    # Step A: Classify Intent
+    # Step A: Classify Intent for Text Queries
     router_prompt = f"Classify the following user query: '{request.prompt}'"
     router_response = llm_model.generate_content(
         router_prompt,
@@ -168,14 +167,11 @@ async def blinkit_assistant(request: RecipeRequest):
     if intent == "INVENTORY_QUERY":
         skus = search_catalog(query)
         if not skus:
-            return {"type": "chat", "message": f"Sorry, I couldn't find any products matching '{query}'. Check spelling or try a broader term."}
+            return {"type": "chat", "message": f"Sorry, I couldn't find any products matching '{query}'."}
         
         top_match = skus[0]
         status = f"in stock (₹{top_match.price} for {top_match.pack_size})" if top_match.in_stock else "currently out of stock"
-        return {
-            "type": "chat", 
-            "message": f"Yes, {top_match.name} is {status}."
-        }
+        return {"type": "chat", "message": f"Yes, {top_match.name} is {status}."}
 
     # Step C: Handle complex recipe building
     elif intent == "RECIPE_EXTRACTION":
