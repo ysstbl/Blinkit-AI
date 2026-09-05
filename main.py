@@ -8,31 +8,24 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
-
 load_dotenv()
 
-# 1. Initialize models and config
-app = FastAPI(title="Recipe-to-Cart API")
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-llm_model = genai.GenerativeModel('gemini-3.1-flash-lite')
-embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-DB_URL = os.getenv("DATABASE_URL")
+app = FastAPI(title="Blinkit AI Assistant API")
 
-
-# ... existing code ...
-app = FastAPI(title="Recipe-to-Cart API")
-
-# Add this CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for local development
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ... rest of the code ...
 
-# 2. Define Data Models
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+llm_model = genai.GenerativeModel('gemini-1.5-flash')
+embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+DB_URL = os.getenv("DATABASE_URL")
+
+# --- 1. DATA MODELS ---
 class RecipeRequest(BaseModel):
     prompt: str
 
@@ -50,9 +43,18 @@ class IngredientMatch(BaseModel):
     selected_sku: MatchedSKU | None = None
     is_substituted: bool = False
     original_sku: MatchedSKU | None = None
-    raw_matches: list[MatchedSKU] # Keeping this for debugging
+    raw_matches: list[MatchedSKU]
 
-# 3. LLM Structured Output Schema
+# --- 2. LLM SCHEMAS ---
+intent_schema = {
+    "type": "object",
+    "properties": {
+        "intent": {"type": "string", "enum": ["INVENTORY_QUERY", "RECIPE_EXTRACTION"]},
+        "cleaned_query": {"type": "string", "description": "The core product or recipe query"}
+    },
+    "required": ["intent", "cleaned_query"]
+}
+
 recipe_schema = {
     "type": "object",
     "properties": {
@@ -62,9 +64,9 @@ recipe_schema = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "canonical_name": {"type": "string", "description": "Generic ingredient name, e.g., 'paneer'"},
-                    "quantity": {"type": "string", "description": "Amount with unit, e.g., '200g'"},
-                    "is_pantry_staple": {"type": "boolean", "description": "True if common spice/oil/salt"}
+                    "canonical_name": {"type": "string"},
+                    "quantity": {"type": "string"},
+                    "is_pantry_staple": {"type": "boolean"}
                 },
                 "required": ["canonical_name", "quantity", "is_pantry_staple"]
             }
@@ -73,22 +75,18 @@ recipe_schema = {
     "required": ["dish_name", "ingredients"]
 }
 
+# --- 3. HELPER FUNCTIONS ---
 def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
-    """Convert ingredient to vector and query Supabase for top 3 matches."""
+    """Convert string to vector and search pgvector database"""
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
-    
-    # Create embedding for the ingredient
     vector = embed_model.encode(ingredient_name).tolist()
-    
-    # Query using pgvector cosine distance (<=>)
     cur.execute("""
         SELECT sku_id, name, price, in_stock, pack_size
         FROM grocery_catalog
         ORDER BY embedding <=> %s::vector
         LIMIT 3;
     """, (vector,))
-    
     results = cur.fetchall()
     cur.close()
     conn.close()
@@ -98,12 +96,10 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
         for row in results
     ]
 
-@app.post("/api/recipe-to-cart", response_model=list[IngredientMatch])
-async def parse_and_match(request: RecipeRequest):
-    # A. Parse Recipe with LLM
-    prompt = f"Extract the recipe ingredients for: {request.prompt}"
+def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
+    """Extract ingredients and handle out-of-stock substitutions"""
     response = llm_model.generate_content(
-        prompt,
+        f"Extract the recipe ingredients for: {prompt}",
         generation_config=genai.GenerationConfig(
             response_mime_type="application/json",
             response_schema=recipe_schema
@@ -115,24 +111,18 @@ async def parse_and_match(request: RecipeRequest):
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse LLM output")
 
-    # B. Match and Resolve Substitutions
     final_cart = []
     for item in parsed_data.get("ingredients", []):
-        # Returns top 3 vector matches
-        skus = search_catalog(item["canonical_name"]) 
-        
+        skus = search_catalog(item["canonical_name"])
         selected_sku = None
         is_substituted = False
         original_sku = None
         
         if skus:
-            # The #1 closest vector match
             primary_match = skus[0] 
-            
             if primary_match.in_stock:
                 selected_sku = primary_match
             else:
-                # Trigger Substitution: find the next closest item that IS in stock
                 original_sku = primary_match
                 is_substituted = True
                 for fallback in skus[1:]:
@@ -149,5 +139,45 @@ async def parse_and_match(request: RecipeRequest):
             original_sku=original_sku,
             raw_matches=skus
         ))
-        
     return final_cart
+
+# --- 4. MAIN ROUTER ENDPOINT ---
+@app.post("/api/blinkit-assistant")
+async def blinkit_assistant(request: RecipeRequest):
+    """Classifies user intent and routes to the correct logic pipeline"""
+    
+    # Step A: Classify Intent
+    router_prompt = f"Classify the following user query: '{request.prompt}'"
+    router_response = llm_model.generate_content(
+        router_prompt,
+        generation_config=genai.GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=intent_schema
+        )
+    )
+    
+    try:
+        routing = json.loads(router_response.text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse intent")
+
+    intent = routing.get("intent")
+    query = routing.get("cleaned_query")
+
+    # Step B: Handle direct inventory questions
+    if intent == "INVENTORY_QUERY":
+        skus = search_catalog(query)
+        if not skus:
+            return {"type": "chat", "message": f"Sorry, I couldn't find any products matching '{query}'. Check spelling or try a broader term."}
+        
+        top_match = skus[0]
+        status = f"in stock (₹{top_match.price} for {top_match.pack_size})" if top_match.in_stock else "currently out of stock"
+        return {
+            "type": "chat", 
+            "message": f"Yes, {top_match.name} is {status}."
+        }
+
+    # Step C: Handle complex recipe building
+    elif intent == "RECIPE_EXTRACTION":
+        cart = extract_recipe_cart(request.prompt)
+        return {"type": "recipe_cart", "data": cart}

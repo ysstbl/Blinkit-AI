@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@theme {
+  --color-blinkit-yellow: #F8CB46;
+  --color-blinkit-green: #0C831F;
+  --color-blinkit-greenHover: #0a6b19;
+  --color-blinkit-bg: #F4F6F9;
+  --color-blinkit-text: #1C1C1C;
+  --color-blinkit-muted: #666666;
+}
