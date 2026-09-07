@@ -1,0 +1,8 @@
+fastapi
+pydantic
+psycopg2-binary
+sentence-transformers
+google-generativeai
+python-dotenv
+pandas
+kagglehub
