@@ -2,8 +2,7 @@ import os
 import json
 import psycopg2
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,9 +20,8 @@ app.add_middleware(
 )
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-# Using the latest 1.5 flash model to ensure no 404 errors
+# Using gemini-1.5-flash for maximum stability
 llm_model = genai.GenerativeModel('gemini-3.1-flash-lite')
-embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 DB_URL = os.getenv("DATABASE_URL")
 
 # --- 1. DATA MODELS ---
@@ -78,29 +76,87 @@ recipe_schema = {
 
 # --- 3. HELPER FUNCTIONS ---
 def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
-    """Convert string to vector and search pgvector database"""
+    """Search pgvector using Google's embeddings and fuzzy lexical re-ranking."""
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
-    vector = embed_model.encode(ingredient_name).tolist()
+    
+    # 1. Generate the search vector (Forced to 768 dimensions to match database)
+    embedding_response = genai.embed_content(
+        model="models/gemini-embedding-001",
+        content=ingredient_name,
+        task_type="RETRIEVAL_QUERY",
+        output_dimensionality=768
+    )
+    vector = embedding_response['embedding']
+    
+    # 2. Cast a wide semantic net
     cur.execute("""
         SELECT sku_id, name, price, in_stock, pack_size
         FROM grocery_catalog
         ORDER BY embedding <=> %s::vector
-        LIMIT 3;
+        LIMIT 30; 
     """, (vector,))
     results = cur.fetchall()
     cur.close()
     conn.close()
+
+    # 3. Fuzzy Lexical Anti-Drift Re-ranker
+    query_terms = set(ingredient_name.lower().split())
+    
+    processed_flags = {
+        'pickle', 'paste', 'sauce', 'powder', 'puree', 
+        'crushed', 'juice', 'extract', 'syrup', 'frozen',
+        'spread', 'dip', 'dressing', 'mayo', 'chips',
+        'snack', 'ready', 'mix', 'masala', 'ketchup', 'soup'
+    }
+    fresh_boost_flags = {'fresho', 'fresh', 'organic', 'raw', 'whole'}
+    
+    def calculate_relevance(row):
+        name = row[1].lower()
+        name_terms = set(name.replace('-', ' ').split())
+        
+        # FUZZY OVERLAP: "soy" matches "soya", "chilli" matches "chillies"
+        overlap = 0
+        for q_term in query_terms:
+            for n_term in name_terms:
+                if q_term in n_term or n_term in q_term:
+                    overlap += 1
+                    break 
+        
+        has_processed_flag = any(flag in name_terms for flag in processed_flags)
+        wants_processed = any(flag in query_terms for flag in processed_flags)
+        has_fresh_flag = any(flag in name_terms for flag in fresh_boost_flags)
+        
+        processed_penalty = 8.0 if (has_processed_flag and not wants_processed) else 0.0
+        processed_boost = 4.0 if (has_processed_flag and wants_processed) else 0.0
+        fresh_boost = 3.0 if (has_fresh_flag and not wants_processed) else 0.0
+        
+        extra_words = len(name_terms) - overlap
+        length_penalty = extra_words * 0.1
+        
+        return overlap + fresh_boost + processed_boost - processed_penalty - length_penalty
+
+    results.sort(key=calculate_relevance, reverse=True)
     
     return [
         MatchedSKU(sku_id=row[0], name=row[1], price=row[2], in_stock=row[3], pack_size=row[4])
-        for row in results
+        for row in results[:3]
     ]
 
 def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
-    """Extract ingredients and handle out-of-stock substitutions"""
+    """Extract ingredients and handle out-of-stock substitutions with regional localization"""
+    
+    # CRITICAL FIX: Strips culinary adjectives before searching
+    localization_prompt = f"""
+    Extract the recipe ingredients for: {prompt}.
+    IMPORTANT INSTRUCTIONS:
+    1. Translate Western ingredient names into standard Indian grocery terms (e.g., 'bell pepper' -> 'capsicum', 'cilantro' -> 'coriander leaves', 'eggplant' -> 'brinjal', 'soy sauce' -> 'soya sauce').
+    2. CRITICAL: Strip ALL preparation adjectives, measurements, and physical forms. (e.g., 'minced ginger' -> 'ginger', 'garlic cloves' -> 'garlic', 'chopped tomatoes' -> 'tomato', 'sliced onion' -> 'onion').
+    3. Keep names strictly to the raw base ingredient unless a processed version is specifically requested.
+    """
+    
     response = llm_model.generate_content(
-        f"Extract the recipe ingredients for: {prompt}",
+        localization_prompt,
         generation_config=genai.GenerationConfig(
             response_mime_type="application/json",
             response_schema=recipe_schema
@@ -145,7 +201,6 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
 # --- 4. MAIN ROUTER ENDPOINT ---
 @app.post("/api/blinkit-assistant")
 async def blinkit_assistant(request: RecipeRequest):
-    # Step A: Classify Intent for Text Queries
     router_prompt = f"Classify the following user query: '{request.prompt}'"
     router_response = llm_model.generate_content(
         router_prompt,
@@ -163,7 +218,6 @@ async def blinkit_assistant(request: RecipeRequest):
     intent = routing.get("intent")
     query = routing.get("cleaned_query")
 
-    # Step B: Handle direct inventory questions
     if intent == "INVENTORY_QUERY":
         skus = search_catalog(query)
         if not skus:
@@ -173,7 +227,6 @@ async def blinkit_assistant(request: RecipeRequest):
         status = f"in stock (₹{top_match.price} for {top_match.pack_size})" if top_match.in_stock else "currently out of stock"
         return {"type": "chat", "message": f"Yes, {top_match.name} is {status}."}
 
-    # Step C: Handle complex recipe building
     elif intent == "RECIPE_EXTRACTION":
         cart = extract_recipe_cart(request.prompt)
         return {"type": "recipe_cart", "data": cart}
