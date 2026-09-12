@@ -82,7 +82,7 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
     
     # 1. Generate the search vector (Forced to 768 dimensions to match database)
     embedding_response = genai.embed_content(
-        model="models/gemini-embedding-001",
+        model="models/gemini-embedding-002",
         content=ingredient_name,
         task_type="RETRIEVAL_QUERY",
         output_dimensionality=768
