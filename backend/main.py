@@ -6,8 +6,12 @@ from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
+from sentence_transformers import SentenceTransformer
 
 load_dotenv()
+
+# Load the local vector model to bypass all API limits
+embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 app = FastAPI(title="Blinkit AI Assistant API")
 
@@ -19,9 +23,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure LLM for the text reasoning (recipe extraction/routing)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-# Using gemini-1.5-flash for maximum stability
-llm_model = genai.GenerativeModel('gemini-3.1-flash-lite')
+llm_model = genai.GenerativeModel('gemini-3.1-flash-lite') 
 DB_URL = os.getenv("DATABASE_URL")
 
 # --- 1. DATA MODELS ---
@@ -76,18 +80,13 @@ recipe_schema = {
 
 # --- 3. HELPER FUNCTIONS ---
 def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
-    """Search pgvector using Google's embeddings and fuzzy lexical re-ranking."""
+    """Search pgvector using local embeddings and fuzzy lexical re-ranking."""
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
     
-    # 1. Generate the search vector (Forced to 768 dimensions to match database)
-    embedding_response = genai.embed_content(
-        model="models/gemini-embedding-002",
-        content=ingredient_name,
-        task_type="RETRIEVAL_QUERY",
-        output_dimensionality=768
-    )
-    vector = embedding_response['embedding']
+    # 1. Generate local vector with lightweight prefix
+    enriched_query = f"Product: {ingredient_name}"
+    vector = embed_model.encode(enriched_query).tolist()
     
     # 2. Cast a wide semantic net
     cur.execute("""
@@ -107,7 +106,7 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
         'pickle', 'paste', 'sauce', 'powder', 'puree', 
         'crushed', 'juice', 'extract', 'syrup', 'frozen',
         'spread', 'dip', 'dressing', 'mayo', 'chips',
-        'snack', 'ready', 'mix', 'masala', 'ketchup', 'soup'
+        'snack', 'ready', 'mix', 'masala', 'ketchup', 'soup', 'cake', 'butter'
     }
     fresh_boost_flags = {'fresho', 'fresh', 'organic', 'raw', 'whole'}
     
@@ -115,7 +114,7 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
         name = row[1].lower()
         name_terms = set(name.replace('-', ' ').split())
         
-        # FUZZY OVERLAP: "soy" matches "soya", "chilli" matches "chillies"
+        # FUZZY OVERLAP
         overlap = 0
         for q_term in query_terms:
             for n_term in name_terms:
@@ -140,18 +139,16 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
     
     return [
         MatchedSKU(sku_id=row[0], name=row[1], price=row[2], in_stock=row[3], pack_size=row[4])
-        for row in results[:3]
+        for row in results[:15]
     ]
 
 def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
-    """Extract ingredients and handle out-of-stock substitutions with regional localization"""
-    
-    # CRITICAL FIX: Strips culinary adjectives before searching
+    """Extract ingredients and handle out-of-stock substitutions"""
     localization_prompt = f"""
     Extract the recipe ingredients for: {prompt}.
     IMPORTANT INSTRUCTIONS:
-    1. Translate Western ingredient names into standard Indian grocery terms (e.g., 'bell pepper' -> 'capsicum', 'cilantro' -> 'coriander leaves', 'eggplant' -> 'brinjal', 'soy sauce' -> 'soya sauce').
-    2. CRITICAL: Strip ALL preparation adjectives, measurements, and physical forms. (e.g., 'minced ginger' -> 'ginger', 'garlic cloves' -> 'garlic', 'chopped tomatoes' -> 'tomato', 'sliced onion' -> 'onion').
+    1. Translate Western ingredient names into standard Indian grocery terms (e.g., 'bell pepper' -> 'capsicum', 'cilantro' -> 'coriander leaves').
+    2. CRITICAL: Strip ALL preparation adjectives, measurements, and physical forms. (e.g., 'minced ginger' -> 'ginger', 'sliced onion' -> 'onion').
     3. Keep names strictly to the raw base ingredient unless a processed version is specifically requested.
     """
     
