@@ -150,6 +150,7 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
     1. Translate Western ingredient names into standard Indian grocery terms (e.g., 'bell pepper' -> 'capsicum', 'cilantro' -> 'coriander leaves').
     2. CRITICAL: Strip ALL preparation adjectives, measurements, and physical forms. (e.g., 'minced ginger' -> 'ginger', 'sliced onion' -> 'onion').
     3. Keep names strictly to the raw base ingredient unless a processed version is specifically requested.
+    4. Be precise with every ingredient (e.g., don't give 'oil', be specific 'mustard oil'/'olive oil').
     """
     
     response = llm_model.generate_content(
