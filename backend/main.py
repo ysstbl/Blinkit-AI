@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import psycopg2
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -24,7 +25,7 @@ app.add_middleware(
 )
 
 # Configure LLM for the text reasoning (recipe extraction/routing)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY")) rf
 llm_model = genai.GenerativeModel('gemini-3.1-flash-lite') 
 DB_URL = os.getenv("DATABASE_URL")
 
@@ -46,16 +47,21 @@ class IngredientMatch(BaseModel):
     selected_sku: MatchedSKU | None = None
     is_substituted: bool = False
     original_sku: MatchedSKU | None = None
+    substitution_reason: str | None = None
     raw_matches: list[MatchedSKU]
 
 # --- 2. LLM SCHEMAS ---
 intent_schema = {
     "type": "object",
     "properties": {
-        "intent": {"type": "string", "enum": ["INVENTORY_QUERY", "RECIPE_EXTRACTION"]},
+        "intent": {"type": "string", "enum": ["INVENTORY_QUERY", "CATALOG_QUERY", "RECIPE_EXTRACTION", "CHAT"]},
+        "query_type": {
+            "type": "string",
+            "enum": ["CHEAPEST_ITEM", "MOST_EXPENSIVE_ITEM", "CHAT"],
+        },
         "cleaned_query": {"type": "string", "description": "The core product or recipe query"}
     },
-    "required": ["intent", "cleaned_query"]
+    "required": ["intent", "query_type", "cleaned_query"]
 }
 
 recipe_schema = {
@@ -136,6 +142,8 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
         return overlap + fresh_boost + processed_boost - processed_penalty - length_penalty
 
     results.sort(key=calculate_relevance, reverse=True)
+    if not results or calculate_relevance(results[0]) <= 0:
+        return []
     
     return [
         MatchedSKU(sku_id=row[0], name=row[1], price=row[2], in_stock=row[3], pack_size=row[4])
@@ -172,6 +180,7 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
         selected_sku = None
         is_substituted = False
         original_sku = None
+        substitution_reason = None
         
         if skus:
             primary_match = skus[0] 
@@ -180,6 +189,7 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
             else:
                 original_sku = primary_match
                 is_substituted = True
+                substitution_reason = "The closest catalog match is out of stock."
                 for fallback in skus[1:]:
                     if fallback.in_stock:
                         selected_sku = fallback
@@ -192,14 +202,100 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
             selected_sku=selected_sku,
             is_substituted=is_substituted,
             original_sku=original_sku,
+            substitution_reason=substitution_reason,
             raw_matches=skus
         ))
     return final_cart
 
+def create_product_checklist(query: str) -> IngredientMatch | None:
+    """Turn a product request into a staged checklist item."""
+    skus = search_catalog(query)
+    if not skus:
+        return None
+
+    primary_match = skus[0]
+    selected_sku = primary_match if primary_match.in_stock else None
+    original_sku = None
+    substitution_reason = None
+
+    if not primary_match.in_stock:
+        original_sku = primary_match
+        for fallback in skus[1:]:
+            if fallback.in_stock:
+                selected_sku = fallback
+                break
+        if selected_sku:
+            substitution_reason = "The closest catalog match is out of stock."
+
+    return IngredientMatch(
+        canonical_name=query,
+        quantity="1",
+        is_pantry_staple=False,
+        selected_sku=selected_sku,
+        is_substituted=bool(original_sku and selected_sku),
+        original_sku=original_sku,
+        substitution_reason=substitution_reason,
+        raw_matches=skus,
+    )
+
+def answer_catalog_query(query_type: str, catalog_filter: str = "") -> str:
+    """Answer catalog price questions, optionally narrowed to a product category."""
+    order = "ASC" if query_type == "CHEAPEST_ITEM" else "DESC"
+    label = "cheapest" if query_type == "CHEAPEST_ITEM" else "most expensive"
+    filter_terms = [term for term in catalog_filter.lower().split() if len(term) > 1]
+    filter_sql = ""
+    filter_params = []
+    if filter_terms:
+        conditions = []
+        for term in filter_terms:
+            conditions.append("(name ILIKE %s OR category ILIKE %s)")
+            wildcard = f"%{term}%"
+            filter_params.extend([wildcard, wildcard])
+        filter_sql = " AND " + " AND ".join(conditions)
+
+    conn = psycopg2.connect(DB_URL)
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT name, price, pack_size
+        FROM grocery_catalog
+        WHERE in_stock = TRUE AND price IS NOT NULL{filter_sql}
+        ORDER BY price {order}
+        LIMIT 1;
+    """, filter_params)
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not result:
+        scope = f" matching '{catalog_filter}'" if filter_terms else ""
+        return f"I couldn't find an in-stock item{scope} to identify as the {label} item right now."
+
+    name, price, pack_size = result
+    scope = f" {catalog_filter}" if filter_terms else ""
+    return f"The {label}{scope} in-stock item is {name} at ₹{price} for {pack_size}."
+
+def extract_catalog_filter(prompt: str, cleaned_query: str | None) -> str:
+    """Remove price-question language and keep the requested product/category terms."""
+    source = cleaned_query or prompt
+    source = re.sub(
+        r"\b(cheapest|most expensive|lowest price|highest price|price|item|items|product|products|in stock|available|is|are|the|what|whats|what's|please|show|me|find)\b",
+        " ",
+        source.lower(),
+    )
+    return " ".join(source.split())
+
 # --- 4. MAIN ROUTER ENDPOINT ---
 @app.post("/api/blinkit-assistant")
 async def blinkit_assistant(request: RecipeRequest):
-    router_prompt = f"Classify the following user query: '{request.prompt}'"
+    router_prompt = f"""
+    Classify this grocery assistant message: '{request.prompt}'
+    Use RECIPE_EXTRACTION when the user asks what to buy for a dish or recipe.
+    Use INVENTORY_QUERY when the user is asking for a specific product or wants to add a product.
+    Use CATALOG_QUERY for questions about the catalog as a whole, such as cheapest, most expensive,
+    or price comparisons. Use CHAT for general conversation that needs no catalog lookup.
+    For CATALOG_QUERY, set query_type to CHEAPEST_ITEM or MOST_EXPENSIVE_ITEM.
+    For other intents, set query_type to CHAT and cleaned_query to the product or topic.
+    """
     router_response = llm_model.generate_content(
         router_prompt,
         generation_config=genai.GenerationConfig(
@@ -214,17 +310,55 @@ async def blinkit_assistant(request: RecipeRequest):
         raise HTTPException(status_code=500, detail="Failed to parse intent")
 
     intent = routing.get("intent")
+    query_type = routing.get("query_type", "CHAT")
     query = routing.get("cleaned_query")
+    normalized_prompt = request.prompt.lower()
+    if "cheapest" in normalized_prompt or "lowest price" in normalized_prompt:
+        intent = "CATALOG_QUERY"
+        query_type = "CHEAPEST_ITEM"
+    elif "most expensive" in normalized_prompt or "highest price" in normalized_prompt:
+        intent = "CATALOG_QUERY"
+        query_type = "MOST_EXPENSIVE_ITEM"
 
-    if intent == "INVENTORY_QUERY":
-        skus = search_catalog(query)
-        if not skus:
-            return {"type": "chat", "message": f"Sorry, I couldn't find any products matching '{query}'."}
-        
-        top_match = skus[0]
-        status = f"in stock (₹{top_match.price} for {top_match.pack_size})" if top_match.in_stock else "currently out of stock"
-        return {"type": "chat", "message": f"Yes, {top_match.name} is {status}."}
+    if intent == "CATALOG_QUERY":
+        catalog_filter = extract_catalog_filter(request.prompt, query)
+        return {"type": "chat", "message": answer_catalog_query(query_type, catalog_filter)}
+
+    elif intent == "CHAT":
+        response = llm_model.generate_content(
+            f"Reply naturally and briefly to this grocery assistant message: '{request.prompt}'. "
+            "Do not claim to have searched the catalog or changed the cart.",
+        )
+        return {"type": "chat", "message": response.text.strip()}
+
+    elif intent == "INVENTORY_QUERY":
+        item = create_product_checklist(query)
+        if not item:
+            return {
+                "type": "chat",
+                "message": (
+                    f"I couldn't find '{query}' in the catalog, so I haven't added anything "
+                    "to the checklist."
+                ),
+            }
+        if item.is_substituted:
+            message = (
+                f"'{item.canonical_name}' is out of stock. I found '{item.selected_sku.name}' "
+                "as the closest available match. Please confirm it in the checklist."
+            )
+        elif not item.selected_sku:
+            message = (
+                f"'{item.canonical_name}' is currently out of stock and I couldn't find an "
+                "available substitute."
+            )
+        else:
+            message = f"I found '{item.selected_sku.name}'. Review it in the checklist before adding it to your cart."
+        return {"type": "checklist", "message": message, "data": [item]}
 
     elif intent == "RECIPE_EXTRACTION":
         cart = extract_recipe_cart(request.prompt)
-        return {"type": "recipe_cart", "data": cart}
+        return {
+            "type": "checklist",
+            "message": "I prepared these items for review. Select or unselect anything before adding them to your cart.",
+            "data": cart,
+        }

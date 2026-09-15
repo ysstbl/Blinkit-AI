@@ -1,7 +1,13 @@
-import React, { useState } from "react";
-import { Search, Sparkles, Send, AlertCircle, ShoppingCart, RefreshCw, Bot, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Sparkles, Send, AlertCircle, ShoppingCart, RefreshCw, Bot, User, X } from "lucide-react";
+import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
+
+function getCurrentRoute() {
+  return window.location.pathname === "/blinkit" ? "blinkit" : "main";
+}
 
 export default function App() {
+  const [route, setRoute] = useState(getCurrentRoute);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([
     {
@@ -12,6 +18,20 @@ export default function App() {
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
+
+  useEffect(() => {
+    const onPopState = () => setRoute(getCurrentRoute());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const navigate = (path) => {
+    window.history.pushState({}, "", path);
+    setRoute(path === "/blinkit" ? "blinkit" : "main");
+  };
+
+  if (route === "blinkit") return <BlinkitReplicaApp />;
 
   const handleSend = async (e) => {
     e?.preventDefault();
@@ -50,11 +70,11 @@ export default function App() {
             text: resData.message,
           },
         ]);
-      } else if (resData.type === "recipe_cart") {
-        // Initialize active selections: main items selected, staples unselected
+      } else if (resData.type === "checklist") {
+        // Keep every result staged until the shopper submits the checklist.
         const initialItems = resData.data.map((item) => ({
           ...item,
-          selected: !item.is_pantry_staple,
+          selected: Boolean(item.selected_sku) && !item.is_substituted && !item.is_pantry_staple,
         }));
 
         setMessages((prev) => [
@@ -62,12 +82,13 @@ export default function App() {
           {
             id: Date.now().toString() + "_cart",
             sender: "bot",
-            type: "recipe_cart",
+            type: "checklist",
+            text: resData.message,
             items: initialItems,
           },
         ]);
       }
-    } catch (err) {
+    } catch {
       setMessages((prev) => [
         ...prev,
         {
@@ -80,6 +101,23 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const addSelectedToCart = (messageId) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId) return msg;
+
+        const selectedItems = msg.items.filter((item) => item.selected && item.selected_sku);
+        setCartItems((currentCart) => [...currentCart, ...selectedItems]);
+
+        return { ...msg, items: msg.items.filter((item) => !item.selected) };
+      })
+    );
+  };
+
+  const removeFromCart = (itemIndex) => {
+    setCartItems((currentCart) => currentCart.filter((_, index) => index !== itemIndex));
   };
 
   const toggleItemSelection = (messageId, itemIdx) => {
@@ -97,9 +135,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F9] font-sans flex flex-col text-[#1C1C1C]">
-      {/* Blinkit-Themed Header */}
-      <header className="bg-white px-4 py-3 border-b border-gray-200 sticky top-0 z-20 flex justify-between items-center shadow-xs">
+    <>
+      <div className="min-h-screen bg-[#F4F6F9] font-sans flex flex-col text-[#1C1C1C]">
+        <div className="flex justify-end px-4 pt-3">
+          <button
+            type="button"
+            onClick={() => navigate("/blinkit")}
+            className="bg-[#0C831F] text-white text-xs font-bold px-3 py-2 rounded-full shadow-sm"
+          >
+            Open Blinkit replica
+          </button>
+        </div>
+        {/* Blinkit-Themed Header */}
+        <header className="bg-white px-4 py-3 border-b border-gray-200 sticky top-0 z-20 flex justify-between items-center shadow-xs">
         <div>
           <div className="flex items-center gap-1.5">
             <span className="bg-[#F8CB46] text-[#1C1C1C] text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded">
@@ -109,7 +157,40 @@ export default function App() {
           </div>
           <p className="text-xs text-gray-500">Smart Recipe & Inventory Assistant</p>
         </div>
+        <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+          <ShoppingCart className="w-4 h-4 text-[#0C831F]" />
+          {cartItems.length} in cart
+        </div>
       </header>
+
+      {cartItems.length > 0 && (
+        <section className="max-w-2xl w-full mx-auto px-4 pt-3">
+          <div className="bg-white border border-gray-200 rounded-2xl p-3 shadow-xs">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-600">Your cart</p>
+              <p className="text-xs text-gray-500">{cartItems.length} item{cartItems.length === 1 ? "" : "s"}</p>
+            </div>
+            <div className="space-y-1.5">
+              {cartItems.map((item, index) => (
+                <div key={`${item.selected_sku.sku_id}-${index}`} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-800">{item.selected_sku.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">₹{item.selected_sku.price}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFromCart(index)}
+                      aria-label={`Remove ${item.selected_sku.name} from cart`}
+                      className="p-1 text-gray-400 hover:text-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Conversation Thread */}
       <main className="flex-1 max-w-2xl w-full mx-auto p-4 space-y-4 overflow-y-auto pb-28">
@@ -138,12 +219,17 @@ export default function App() {
                 </div>
               ) : null}
 
-              {/* Recipe Cart Cards Message */}
-              {msg.type === "recipe_cart" && (
-                <RecipeCartWidget
-                  items={msg.items}
-                  onToggleItem={(idx) => toggleItemSelection(msg.id, idx)}
-                />
+              {msg.type === "checklist" && (
+                <>
+                  <div className="bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-bl-xs p-3.5 text-sm leading-relaxed shadow-xs">
+                    {msg.text}
+                  </div>
+                  <RecipeCartWidget
+                    items={msg.items}
+                    onToggleItem={(idx) => toggleItemSelection(msg.id, idx)}
+                    onAddToCart={() => addSelectedToCart(msg.id)}
+                  />
+                </>
               )}
             </div>
 
@@ -186,11 +272,12 @@ export default function App() {
         </form>
       </footer>
     </div>
+    </>
   );
 }
 
 // Sub-component to render the interactive item tray
-function RecipeCartWidget({ items, onToggleItem }) {
+function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
   const selectedCount = items.filter((i) => i.selected).length;
   const total = items
     .filter((i) => i.selected)
@@ -202,7 +289,7 @@ function RecipeCartWidget({ items, onToggleItem }) {
         <span className="text-xs font-bold uppercase tracking-wider text-gray-600">
           Recipe Ingredients ({items.length})
         </span>
-        <span className="text-xs text-gray-400">Pantry items deselected by default</span>
+          <span className="text-xs text-gray-400">Review before adding</span>
       </div>
 
       <div className="space-y-2">
@@ -241,7 +328,7 @@ function RecipeCartWidget({ items, onToggleItem }) {
               <div className="mt-2.5 flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                 <span>
-                  Replaced out of stock:{" "}
+                  {item.substitution_reason || "Suggested substitute:"}{" "}
                   <span className="line-through opacity-70">
                     {item.original_sku?.name}
                   </span>
@@ -259,7 +346,7 @@ function RecipeCartWidget({ items, onToggleItem }) {
           <p className="text-base font-bold text-gray-900">₹{total}</p>
         </div>
         <button
-          onClick={() => alert(`Added ${selectedCount} items to your cart!`)}
+          onClick={onAddToCart}
           disabled={selectedCount === 0}
           className="bg-[#0C831F] hover:bg-[#0a6b19] disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-xl flex items-center gap-2 shadow-xs transition-colors"
         >
