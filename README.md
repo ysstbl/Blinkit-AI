@@ -124,8 +124,6 @@ npm run lint      # Run ESLint
 npm run preview   # Preview the production build
 ```
 
-> [!NOTE]
-> Backend startup currently needs a small source fix: remove the stray `rf` token on the Gemini configuration line in [`backend/main.py`](backend/main.py#L28). Until that is corrected, Python cannot import the FastAPI app.
 
 > [!WARNING]
 > Keep database credentials and API keys in environment variables. Review the connection handling in [`backend/initialize_catalog.py`](backend/initialize_catalog.py) before using it in a shared or production environment; the file currently contains a connection string in source rather than reading `DATABASE_URL`.
