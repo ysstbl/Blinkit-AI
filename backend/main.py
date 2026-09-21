@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 # Configure LLM for the text reasoning (recipe extraction/routing)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY")) rf
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 llm_model = genai.GenerativeModel('gemini-3.1-flash-lite') 
 DB_URL = os.getenv("DATABASE_URL")
 
@@ -85,7 +85,7 @@ recipe_schema = {
 }
 
 # --- 3. HELPER FUNCTIONS ---
-def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
+def search_catalog(ingredient_name: str, recipe_context: bool = False) -> list[MatchedSKU]:
     """Search pgvector using local embeddings and fuzzy lexical re-ranking."""
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
@@ -96,10 +96,10 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
     
     # 2. Cast a wide semantic net
     cur.execute("""
-        SELECT sku_id, name, price, in_stock, pack_size
+        SELECT sku_id, name, price, in_stock, pack_size, category
         FROM grocery_catalog
         ORDER BY embedding <=> %s::vector
-        LIMIT 30; 
+        LIMIT 100; 
     """, (vector,))
     results = cur.fetchall()
     cur.close()
@@ -107,6 +107,21 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
 
     # 3. Fuzzy Lexical Anti-Drift Re-ranker
     query_terms = set(ingredient_name.lower().split())
+    normalized_query = re.sub(r"[^a-z0-9 ]", " ", ingredient_name.lower())
+
+    non_food_flags = {
+        'bleach', 'bathroom', 'cleaner', 'cleaning', 'disinfectant', 'dishwash',
+        'drain', 'fabric', 'floor', 'handwash', 'laundry', 'phenyl', 'polish',
+        'sanitizer', 'shampoo', 'soap', 'toilet', 'surface', 'detergent',
+    }
+    food_category_flags = {
+        'bakery', 'beverage', 'dairy', 'food', 'fruit', 'grocery', 'meat',
+        'produce', 'snack', 'spice', 'staple', 'vegetable',
+    }
+
+    def is_food_candidate(row):
+        product_text = f"{row[1]} {row[5] or ''}".lower()
+        return not any(flag in product_text for flag in non_food_flags)
     
     processed_flags = {
         'pickle', 'paste', 'sauce', 'powder', 'puree', 
@@ -138,9 +153,18 @@ def search_catalog(ingredient_name: str) -> list[MatchedSKU]:
         
         extra_words = len(name_terms) - overlap
         length_penalty = extra_words * 0.1
+        exact_phrase_boost = 5.0 if normalized_query in name else 0.0
+        food_category_boost = 1.5 if any(
+            flag in (row[5] or '').lower() for flag in food_category_flags
+        ) else 0.0
         
-        return overlap + fresh_boost + processed_boost - processed_penalty - length_penalty
+        return (
+            overlap + exact_phrase_boost + food_category_boost + fresh_boost
+            + processed_boost - processed_penalty - length_penalty
+        )
 
+    if recipe_context:
+        results = [row for row in results if is_food_candidate(row)]
     results.sort(key=calculate_relevance, reverse=True)
     if not results or calculate_relevance(results[0]) <= 0:
         return []
@@ -176,7 +200,7 @@ def extract_recipe_cart(prompt: str) -> list[IngredientMatch]:
 
     final_cart = []
     for item in parsed_data.get("ingredients", []):
-        skus = search_catalog(item["canonical_name"])
+        skus = search_catalog(item["canonical_name"], recipe_context=True)
         selected_sku = None
         is_substituted = False
         original_sku = None

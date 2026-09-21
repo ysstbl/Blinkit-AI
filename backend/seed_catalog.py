@@ -38,12 +38,13 @@ for idx, row in df.iterrows():
         float(row['sale_price']),           
         random.choice([True, True, False]), 
         str(row.get('quantity', '1 pc')),   
-        str(embeddings[idx].tolist())  
+        str(embeddings[idx].tolist()),
+        str(row.get('category', '')),
     ))
 
 # page_size=1000 ensures massive uploads don't crash PostgreSQL
 execute_values(cur, """
-    INSERT INTO grocery_catalog (sku_id, name, price, in_stock, pack_size, embedding) 
+    INSERT INTO grocery_catalog (sku_id, name, price, in_stock, pack_size, embedding, category)
     VALUES %s
 """, records, page_size=1000)
 

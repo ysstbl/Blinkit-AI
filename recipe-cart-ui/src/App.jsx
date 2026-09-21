@@ -294,9 +294,14 @@ function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
 
       <div className="space-y-2">
         {items.map((item, idx) => (
+          (() => {
+            const suggestedSku = item.selected_sku || item.raw_matches?.[0];
+            const hasUnavailableSuggestion = !item.selected_sku && Boolean(suggestedSku);
+
+            return (
           <div
             key={idx}
-            onClick={() => onToggleItem(idx)}
+            onClick={() => !hasUnavailableSuggestion && onToggleItem(idx)}
             className={`p-3 rounded-xl border transition-all cursor-pointer select-none ${
               item.selected ? "bg-white border-gray-200 shadow-xs" : "bg-gray-50 border-gray-100 opacity-60"
             }`}
@@ -306,6 +311,7 @@ function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
                 <input
                   type="checkbox"
                   checked={item.selected}
+                  disabled={hasUnavailableSuggestion}
                   readOnly
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-[#0C831F] accent-[#0C831F]"
                 />
@@ -314,8 +320,13 @@ function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
                     {item.canonical_name} ({item.quantity})
                   </p>
                   <p className="text-sm font-medium text-gray-900">
-                    {item.selected_sku?.name || "No direct SKU found"}
+                    {suggestedSku?.name || "We could not find a suitable catalog option yet"}
                   </p>
+                  {hasUnavailableSuggestion && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      Suggested alternative, currently unavailable
+                    </p>
+                  )}
                 </div>
               </div>
               <span className="text-sm font-bold text-gray-900 shrink-0">
@@ -336,6 +347,8 @@ function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
               </div>
             )}
           </div>
+            );
+          })()
         ))}
       </div>
 
