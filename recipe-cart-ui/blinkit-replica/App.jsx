@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import './blinkitReplica.css';
 
 const categories = [
@@ -18,14 +19,14 @@ const deals = [
 ];
 
 const products = [
-  { name: 'Farmley Almonds', weight: '1 kg', price: 499, tag: 'Best Seller', accent: 'amber' },
-  { name: 'Coca-Cola', weight: '600 ml', price: 92, tag: 'Cold', accent: 'red' },
-  { name: 'Paneer', weight: '200 g', price: 110, tag: 'Fresh', accent: 'green' },
-  { name: 'Strawberries', weight: '250 g', price: 178, tag: 'Seasonal', accent: 'pink' },
-  { name: 'Brown Bread', weight: '400 g', price: 69, tag: 'Bakery', accent: 'gold' },
-  { name: 'Mango', weight: '1 kg', price: 149, tag: 'Popular', accent: 'orange' },
-  { name: 'Yogurt', weight: '400 g', price: 60, tag: 'Dairy', accent: 'sky' },
-  { name: 'Potato Chips', weight: '150 g', price: 45, tag: 'Crunchy', accent: 'purple' },
+  { name: 'Farmley Almonds', weight: '1 kg', price: 499, tag: 'Best Seller', category: 'Grocery', accent: 'amber' },
+  { name: 'Coca-Cola', weight: '600 ml', price: 92, tag: 'Cold', category: 'Cold Drinks', accent: 'red' },
+  { name: 'Paneer', weight: '200 g', price: 110, tag: 'Fresh', category: 'Dairy & Breakfast', accent: 'green' },
+  { name: 'Strawberries', weight: '250 g', price: 178, tag: 'Seasonal', category: 'Vegetables & Fruits', accent: 'pink' },
+  { name: 'Brown Bread', weight: '400 g', price: 69, tag: 'Bakery', category: 'Bakery', accent: 'gold' },
+  { name: 'Mango', weight: '1 kg', price: 149, tag: 'Popular', category: 'Vegetables & Fruits', accent: 'orange' },
+  { name: 'Yogurt', weight: '400 g', price: 60, tag: 'Dairy', category: 'Dairy & Breakfast', accent: 'sky' },
+  { name: 'Potato Chips', weight: '150 g', price: 45, tag: 'Crunchy', category: 'Munchies', accent: 'purple' },
 ];
 
 function getProductEmoji(name) {
@@ -39,7 +40,36 @@ function getProductEmoji(name) {
   return '🍟';
 }
 
-export default function BlinkitReplicaApp() {
+export default function BlinkitReplicaApp({ showCart = false }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [cartItems, setCartItems] = useState([]);
+  const [lastAdded, setLastAdded] = useState('');
+
+  const visibleProducts = products.filter((product) => {
+    const matchesCategory = activeCategory === 'All' || product.category === activeCategory;
+    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase().trim());
+    return matchesCategory && matchesSearch;
+  });
+
+  const cartTotal = cartItems.reduce((total, product) => total + product.price, 0);
+
+  const addToCart = (product) => {
+    setCartItems((currentItems) => [...currentItems, product]);
+    setLastAdded(product.name);
+    window.setTimeout(() => setLastAdded(''), 1800);
+  };
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setActiveCategory('All');
+  };
+
+  const navigateTo = (path) => {
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return (
     <div className="blinkit-replica-shell">
       <div className="blinkit-app">
@@ -53,10 +83,21 @@ export default function BlinkitReplicaApp() {
           </div>
 
           <div className="header-actions">
-            <div className="search-box">
+            <label className="search-box">
               <span className="search-icon">⌕</span>
-              <span>Search for groceries</span>
-            </div>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search for groceries"
+                aria-label="Search for groceries"
+              />
+              {searchQuery && (
+                <button type="button" className="clear-search" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                  x
+                </button>
+              )}
+            </label>
             <button type="button" className="profile-button">Login</button>
           </div>
         </header>
@@ -70,12 +111,16 @@ export default function BlinkitReplicaApp() {
                 <strong>Sector 62, Noida</strong>
               </div>
             </div>
-            <div className="mini-cart-pill">
+            <button type="button" className="mini-cart-pill" onClick={() => navigateTo('/cart')}>
               <span>🛒</span>
-              <strong>₹ 1,264</strong>
-            </div>
+              <strong>{cartItems.length ? `${cartItems.length} item${cartItems.length === 1 ? '' : 's'} · ₹${cartTotal}` : 'Your cart'}</strong>
+            </button>
           </section>
 
+          {showCart ? (
+            <CartView items={cartItems} cartTotal={cartTotal} onRemove={(index) => setCartItems((currentItems) => currentItems.filter((_, itemIndex) => itemIndex !== index))} onContinue={() => navigateTo('/blinkit')} />
+          ) : (
+            <>
           <section className="hero-banner">
             <div className="hero-copy">
               <span className="eyebrow">Fresh picks</span>
@@ -89,12 +134,40 @@ export default function BlinkitReplicaApp() {
             </div>
           </section>
 
-          <section className="categories-section">
+          <section className="ai-assistant-banner" aria-labelledby="ai-assistant-title">
+            <div className="ai-assistant-copy">
+              <span className="ai-assistant-eyebrow">Blinkit AI</span>
+              <h2 id="ai-assistant-title">Not sure what to buy?</h2>
+              <p>Tell our AI what you want to cook and get a ready-to-review checklist.</p>
+            </div>
+            <button
+              type="button"
+              className="ai-assistant-button"
+              onClick={() => window.location.assign('/')}
+            >
+              Ask AI <span aria-hidden="true">-&gt;</span>
+            </button>
+          </section>
+
+          <section className="categories-section" aria-label="Browse categories">
+            <button
+              type="button"
+              className={`category-item ${activeCategory === 'All' ? 'active' : ''}`}
+              onClick={() => setActiveCategory('All')}
+            >
+              <div className="category-icon">✦</div>
+              <span>All picks</span>
+            </button>
             {categories.map((category) => (
-              <div key={category.name} className="category-item">
+              <button
+                type="button"
+                key={category.name}
+                className={`category-item ${activeCategory === category.name ? 'active' : ''}`}
+                onClick={() => setActiveCategory(category.name)}
+              >
                 <div className="category-icon">{category.emoji}</div>
                 <span>{category.name}</span>
-              </div>
+              </button>
             ))}
           </section>
 
@@ -109,14 +182,14 @@ export default function BlinkitReplicaApp() {
 
           <section className="section-header">
             <div>
-              <span className="section-tag">Featured</span>
-              <h2>Best sellers</h2>
+              <span className="section-tag">{activeCategory === 'All' ? 'Featured' : 'Browsing'}</span>
+              <h2>{activeCategory === 'All' ? 'Best sellers' : activeCategory}</h2>
             </div>
-            <button type="button">See all</button>
+            <button type="button" onClick={resetFilters}>See all</button>
           </section>
 
           <section className="product-grid">
-            {products.map((product) => (
+            {visibleProducts.map((product) => (
               <article key={product.name} className="product-card">
                 <div className={`product-art ${product.accent}`}>
                   <span>{getProductEmoji(product.name)}</span>
@@ -129,13 +202,72 @@ export default function BlinkitReplicaApp() {
 
                 <div className="price-row">
                   <strong>₹{product.price}</strong>
-                  <button type="button">Add</button>
+                  <button type="button" onClick={() => addToCart(product)}>Add</button>
                 </div>
               </article>
             ))}
+            {!visibleProducts.length && (
+              <div className="empty-state">
+                <span className="empty-state-icon">⌕</span>
+                <strong>No matching picks yet</strong>
+                <p>Try another search or browse all products.</p>
+                <button type="button" onClick={resetFilters}>Show all products</button>
+              </div>
+            )}
           </section>
+            </>
+          )}
         </main>
       </div>
+      {lastAdded && <div className="toast" role="status">Added {lastAdded} to your cart</div>}
     </div>
+  );
+}
+
+function CartView({ items, cartTotal, onRemove, onContinue }) {
+  return (
+    <section className="cart-view" aria-labelledby="cart-title">
+      <div className="cart-view-header">
+        <div>
+          <span className="section-tag">Ready when you are</span>
+          <h1 id="cart-title">Your cart</h1>
+        </div>
+        <button type="button" className="continue-shopping" onClick={onContinue}>Continue shopping</button>
+      </div>
+
+      {items.length ? (
+        <>
+          <div className="cart-list">
+            {items.map((item, index) => (
+              <article className="cart-row" key={`${item.name}-${index}`}>
+                <div className={`cart-row-art ${item.accent}`}>{getProductEmoji(item.name)}</div>
+                <div className="cart-row-details">
+                  <strong>{item.name}</strong>
+                  <span>{item.weight} · {item.tag}</span>
+                </div>
+                <strong className="cart-row-price">₹{item.price}</strong>
+                <button type="button" className="remove-cart-item" onClick={() => onRemove(index)} aria-label={`Remove ${item.name}`}>
+                  x
+                </button>
+              </article>
+            ))}
+          </div>
+          <div className="cart-summary">
+            <div>
+              <span>Subtotal</span>
+              <strong>₹{cartTotal}</strong>
+            </div>
+            <button type="button" className="checkout-button">Proceed to checkout <span aria-hidden="true">-&gt;</span></button>
+          </div>
+        </>
+      ) : (
+        <div className="cart-empty-state">
+          <span className="cart-empty-icon">🛒</span>
+          <h2>Your cart is waiting</h2>
+          <p>Add a few fresh picks and they will appear here.</p>
+          <button type="button" className="checkout-button" onClick={onContinue}>Browse products</button>
+        </div>
+      )}
+    </section>
   );
 }
