@@ -1,0 +1,4 @@
+.env
+.agents/
+.ua/
+.skills-lock.json
