@@ -1,8 +1,16 @@
 # Blinkit AI
 
-Blinkit AI turns natural-language recipe and inventory requests into catalog-backed shopping checklists, using Gemini for intent and recipe extraction and local MiniLM embeddings with PostgreSQL/pgvector for product retrieval. A separate React storefront demonstrates search and cart interactions; it is a static replica and is not connected to the assistant's catalog.
+Blinkit AI is a quick-commerce extension concept that helps customers shop for a recipe without searching for every ingredient individually: describe a dish, get its ingredients matched to grocery catalog products, review availability or substitutes, then add chosen items to a cart. Gemini handles intent and recipe extraction, while local MiniLM embeddings and PostgreSQL/pgvector connect each ingredient to catalog SKUs.
 
 ![Blinkit AI assistant interface](recipe-cart-ui/src/assets/hero.png)
+
+## Quick-Commerce Recipe Flow
+
+The core use case starts with a meal, not a product search. A customer can ask for the ingredients needed for a dish; the assistant extracts ingredient names and quantities, normalizes them to familiar grocery terms, and searches the catalog for relevant SKUs. Each match includes pack size, price, and availability. When the closest match is unavailable, the assistant can suggest an in-stock alternative. The customer reviews the checklist, changes selections, and adds only the chosen items to the cart.
+
+This reduces the work of translating a recipe into a basket: shoppers do not have to leave the cooking intent, search item by item, compare pack options, and manually rebuild a list. Direct product availability and price questions are supported too, but recipe-to-cart is the primary workflow.
+
+The repository demonstrates an integration pattern for a quick-commerce experience, not a production plugin for a specific commerce platform. The AI assistant has its own API and catalog; the Blinkit-style storefront routes currently use separate static sample products and an in-memory cart.
 
 ## Architecture & System Design
 
@@ -21,7 +29,7 @@ flowchart LR
 	 UI -->|/blinkit and /cart| Storefront[Static replica products]
 ```
 
-The assistant separates language understanding from catalog retrieval. Gemini emits schema-constrained JSON to classify a request as inventory lookup, catalog price query, recipe extraction, or general chat. For product lookup, the backend encodes the query with `all-MiniLM-L6-v2`, asks pgvector for the 100 nearest catalog rows, then reranks those candidates using token overlap, exact phrase matches, category signals, and penalties for likely processed-product drift. Recipe results and direct product matches are returned as reviewable checklists; an out-of-stock closest match can be paired with an available candidate for shopper confirmation.
+The assistant separates language understanding from catalog retrieval. For a recipe request, Gemini emits schema-constrained JSON containing the dish and ingredient names, quantities, and pantry-staple flags. The backend normalizes ingredient terminology, encodes each ingredient with `all-MiniLM-L6-v2`, asks pgvector for the 100 nearest catalog rows, then reranks those candidates using token overlap, exact phrase matches, category signals, and penalties for likely processed-product drift. The selected SKU, pack size, price, stock state, and any alternative are returned for customer review. Direct product requests follow the same retrieval path; catalog price questions use SQL filtering and ordering.
 
 The Vite development server proxies `/api` to FastAPI on port `8000`. The `/blinkit` and `/cart` routes instead use a hard-coded product list and browser-memory cart. They are deliberately separate from the database-backed AI flow today.
 
