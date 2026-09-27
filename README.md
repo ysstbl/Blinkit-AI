@@ -2,7 +2,7 @@
 
 Blinkit AI is a quick-commerce extension concept that helps customers shop for a recipe without searching for every ingredient individually: describe a dish, get its ingredients matched to grocery catalog products, review availability or substitutes, then add chosen items to a cart. Gemini handles intent and recipe extraction, while local MiniLM embeddings and PostgreSQL/pgvector connect each ingredient to catalog SKUs.
 
-![Blinkit AI assistant interface](recipe-cart-ui/src/assets/ai-assistant.png
+![Blinkit AI assistant interface](recipe-cart-ui/src/assets/ai-assistant.png)
 
 ## Quick-Commerce Recipe Flow
 
