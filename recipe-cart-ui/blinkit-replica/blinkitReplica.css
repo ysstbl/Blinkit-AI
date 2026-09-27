@@ -737,7 +737,13 @@ button {
   letter-spacing: -0.04em;
 }
 
-.price-row button {
+.product-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.product-actions button {
   border: none;
   background: var(--blinkit-green);
   color: white;
@@ -748,9 +754,33 @@ button {
   transition: background 160ms ease, transform 160ms ease;
 }
 
-.price-row button:hover {
+.product-actions button:hover {
   background: var(--blinkit-green-dark);
   transform: scale(1.04);
+}
+
+.product-actions .ask-ai-product-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 8px;
+  background: #eef7ef;
+  color: var(--blinkit-green-dark);
+  font-size: 0.72rem;
+}
+
+.product-actions .ask-ai-product-button:hover {
+  background: #dcefe0;
+}
+
+.ask-ai-product-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.product-actions .ask-ai-product-button:focus-visible {
+  outline: 2px solid var(--blinkit-green-dark);
+  outline-offset: 2px;
 }
 
 .empty-state {

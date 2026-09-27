@@ -3,14 +3,18 @@ import { Sparkles, Send, AlertCircle, ShoppingCart, RefreshCw, Bot, User, X } fr
 import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
 
 function getCurrentRoute() {
-  if (window.location.pathname === "/blinkit") return "blinkit";
   if (window.location.pathname === "/cart") return "cart";
-  return "main";
+  if (window.location.pathname === "/assistant") return "main";
+  return "blinkit";
 }
 
 export default function App() {
   const [route, setRoute] = useState(getCurrentRoute);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() =>
+    window.location.pathname === "/assistant"
+      ? new URLSearchParams(window.location.search).get("prompt") || ""
+      : ""
+  );
   const [messages, setMessages] = useState([
     {
       id: "welcome",
@@ -30,7 +34,7 @@ export default function App() {
 
   const navigate = (path) => {
     window.history.pushState({}, "", path);
-    setRoute(path === "/blinkit" ? "blinkit" : path === "/cart" ? "cart" : "main");
+    setRoute(path === "/assistant" ? "main" : path === "/cart" ? "cart" : "blinkit");
   };
 
   if (route === "blinkit" || route === "cart") return <BlinkitReplicaApp showCart={route === "cart"} />;

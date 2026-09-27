@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import './blinkitReplica.css';
 
 const categories = [
@@ -143,7 +144,7 @@ export default function BlinkitReplicaApp({ showCart = false }) {
             <button
               type="button"
               className="ai-assistant-button"
-              onClick={() => window.location.assign('/')}
+              onClick={() => window.location.assign('/assistant')}
             >
               Ask AI <span aria-hidden="true">-&gt;</span>
             </button>
@@ -202,7 +203,19 @@ export default function BlinkitReplicaApp({ showCart = false }) {
 
                 <div className="price-row">
                   <strong>₹{product.price}</strong>
-                  <button type="button" onClick={() => addToCart(product)}>Add</button>
+                  <div className="product-actions">
+                    <button
+                      type="button"
+                      className="ask-ai-product-button"
+                      aria-label={`Ask AI what you can make with ${product.name}`}
+                      title={`What can I make with ${product.name}?`}
+                      onClick={() => window.location.assign(`/assistant?prompt=${encodeURIComponent(`What can I make with ${product.name}`)}`)}
+                    >
+                      <Sparkles aria-hidden="true" />
+                      <span>Ask AI</span>
+                    </button>
+                    <button type="button" onClick={() => addToCart(product)}>Add</button>
+                  </div>
                 </div>
               </article>
             ))}
