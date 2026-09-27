@@ -143,15 +143,6 @@ export default function App() {
   return (
     <>
       <div className="min-h-screen bg-[#F4F6F9] font-sans flex flex-col text-[#1C1C1C]">
-        <div className="flex justify-end px-4 pt-3">
-          <button
-            type="button"
-            onClick={() => navigate("/blinkit")}
-            className="bg-[#0C831F] text-white text-xs font-bold px-3 py-2 rounded-full shadow-sm"
-          >
-            Open Blinkit replica
-          </button>
-        </div>
         {/* Blinkit-Themed Header */}
         <header className="bg-white px-4 py-3 border-b border-gray-200 sticky top-0 z-20 flex justify-between items-center shadow-xs">
         <div>
@@ -168,6 +159,15 @@ export default function App() {
           {cartItems.length} in cart
         </div>
       </header>
+      <div className="flex justify-end px-4 pt-3">
+        <button
+          type="button"
+          onClick={() => navigate("/blinkit")}
+          className="bg-[#0C831F] text-white text-xs font-bold px-3 py-2 rounded-full shadow-sm"
+        >
+          Go to storefront
+        </button>
+      </div>
 
       {cartItems.length > 0 && (
         <section className="max-w-2xl w-full mx-auto px-4 pt-3">
