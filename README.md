@@ -1,135 +1,124 @@
 # Blinkit AI
 
-An AI-powered grocery assistant that turns recipe requests and product questions into a reviewable shopping checklist. It combines Gemini for intent and recipe understanding with a PostgreSQL + pgvector catalog and a React/Vite shopping interface.
+Blinkit AI turns natural-language recipe and inventory requests into catalog-backed shopping checklists, using Gemini for intent and recipe extraction and local MiniLM embeddings with PostgreSQL/pgvector for product retrieval. A separate React storefront demonstrates search and cart interactions; it is a static replica and is not connected to the assistant's catalog.
 
 ![Blinkit AI assistant interface](recipe-cart-ui/src/assets/hero.png)
 
-## What it does
-
-- Understands recipe requests such as “Paneer butter masala for two” and extracts the required ingredients.
-- Searches a grocery catalog with local `all-MiniLM-L6-v2` embeddings plus lexical re-ranking.
-- Checks availability and suggests an in-stock substitute when the closest match is unavailable.
-- Answers catalog questions such as the cheapest or most expensive in-stock item, optionally filtered by product terms.
-- Keeps results staged for review so shoppers can select items before adding them to the cart.
-- Includes a static Blinkit-inspired storefront at `/blinkit` for browsing the replica experience.
-
-## Architecture
+## Architecture & System Design
 
 ```mermaid
 flowchart LR
-		UI[React + Vite client] -->|POST /api/blinkit-assistant| API[FastAPI assistant]
-		API --> LLM[Google Gemini]
-		API --> EMB[Local MiniLM embeddings]
-		API --> DB[(PostgreSQL + pgvector)]
-		API --> UI
+	 Shopper --> UI[React 19 + Vite]
+	 UI -->|POST /api/blinkit-assistant| API[FastAPI]
+	 API -->|Structured intent and recipe extraction| Gemini[Google Gemini]
+	 API -->|384-dimensional query vector| Model[all-MiniLM-L6-v2]
+	 Model --> API
+	 API -->|Cosine-distance candidate search| DB[(PostgreSQL + pgvector)]
+	 DB -->|Top 100 candidates| Rank[Lexical relevance reranker]
+	 Rank --> API
+	 API -->|chat or staged checklist| UI
+	 UI -->|User confirms selected items| Cart[In-memory assistant cart]
+	 UI -->|/blinkit and /cart| Storefront[Static replica products]
 ```
 
-The Vite development server proxies `/api` requests to the FastAPI server on port `8000`.
+The assistant separates language understanding from catalog retrieval. Gemini emits schema-constrained JSON to classify a request as inventory lookup, catalog price query, recipe extraction, or general chat. For product lookup, the backend encodes the query with `all-MiniLM-L6-v2`, asks pgvector for the 100 nearest catalog rows, then reranks those candidates using token overlap, exact phrase matches, category signals, and penalties for likely processed-product drift. Recipe results and direct product matches are returned as reviewable checklists; an out-of-stock closest match can be paired with an available candidate for shopper confirmation.
 
-## Project structure
+The Vite development server proxies `/api` to FastAPI on port `8000`. The `/blinkit` and `/cart` routes instead use a hard-coded product list and browser-memory cart. They are deliberately separate from the database-backed AI flow today.
 
-```text
-.
-├── backend/
-│   ├── main.py                 # FastAPI application and assistant router
-│   ├── initialize_catalog.py   # Small sample catalog/schema initializer
-│   └── seed_catalog.py         # Full catalog ingestion from Kaggle
-└── recipe-cart-ui/
-		├── src/App.jsx             # Assistant chat and checklist/cart workflow
-		└── blinkit-replica/        # Static storefront route
-```
+## Technical Feats & Benchmark Status
 
-## Prerequisites
+- Uses a local 384-dimensional `all-MiniLM-L6-v2` model for query and catalog embeddings, while reserving Gemini for language interpretation rather than embedding every query remotely.
+- Combines vector candidate generation with a domain-specific lexical reranker to mitigate semantically close but operationally wrong matches (for example, a processed product returned for a raw ingredient request).
+- Models ingredient-to-SKU matches, availability, and substitution details in typed backend response objects; the frontend tracks checklist selection and only adds confirmed items to its cart.
+- Supports price extrema queries with SQL filtering and ordering over in-stock catalog entries.
+- No latency, throughput, or relevance benchmark is currently recorded in the repository. The current retrieval query orders by vector distance without creating an ANN index, so performance should be measured before making scale claims.
 
-- Python 3.10+ and Node.js 18+
-- A PostgreSQL database with the `pgvector` extension available
-- A Google Gemini API key
-- Enough local disk and memory for the sentence-transformers model on first startup
+## Developer Experience (Quick Start)
 
-## Getting started
+Prerequisites: Python 3.10+, Node.js 20.19+ or 22.12+, a PostgreSQL database with pgvector, and a Gemini API key.
 
-### 1. Configure the backend
+1. **Create the catalog table** in a fresh development database:
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+	```sql
+	CREATE EXTENSION IF NOT EXISTS vector;
 
-Create `backend/.env`:
+	CREATE TABLE grocery_catalog (
+		 sku_id VARCHAR(50) PRIMARY KEY,
+		 name VARCHAR(255) NOT NULL,
+		 category VARCHAR(100),
+		 pack_size VARCHAR(50),
+		 price NUMERIC(10, 2),
+		 in_stock BOOLEAN,
+		 stock_qty INTEGER,
+		 dark_store_id VARCHAR(50),
+		 embedding VECTOR(384)
+	);
+	```
 
-```dotenv
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
-GEMINI_API_KEY=your-gemini-api-key
-```
+2. **Configure and start the API.** Create `backend/.env` with your own credentials, then run the commands below from the repository root. The seeder downloads the BigBasket dataset through `kagglehub`, generates local embeddings, and replaces table contents; use only a disposable development database.
 
-The application expects a `grocery_catalog` table with a 384-dimensional `embedding` column. The sample initializer creates this schema and inserts a small catalog. The full seeder downloads the BigBasket dataset through `kagglehub` and replaces the catalog with generated embeddings.
+	```dotenv
+	DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
+	GEMINI_API_KEY=your-gemini-api-key
+	```
 
-```bash
-# Use the small sample catalog during development.
-python initialize_catalog.py
+	```bash
+	cd backend
+	python -m venv .venv
+	source .venv/bin/activate
+	pip install -r requirements.txt
+	python seed_catalog.py
+	python -m uvicorn main:app --reload --port 8000
+	```
 
-# Or, after configuring the database and Kaggle access, load the larger dataset.
-python seed_catalog.py
-```
+3. **Start the UI** in a second terminal:
 
-Start the API from the `backend` directory:
+	```bash
+	cd recipe-cart-ui
+	npm install
+	npm run dev
+	```
 
-```bash
-python -m uvicorn main:app --reload --port 8000
-```
+	Open the Vite URL (normally `http://localhost:5173`). The assistant is at `/`, and the static storefront is at `/blinkit`.
 
-### 2. Start the frontend
+## API Contract
 
-In a second terminal:
+`POST /api/blinkit-assistant` accepts `{"prompt":"Is paneer available?"}`. Responses use `type: "chat"` with a `message`, or `type: "checklist"` with a `message` and product/ingredient `data`. The Vite proxy is development-only; deploy the frontend and API behind an explicitly configured production origin and route.
 
-```bash
-cd recipe-cart-ui
-npm install
-npm run dev
-```
+## Scalability Roadmap
 
-Open the Vite URL shown in the terminal, usually `http://localhost:5173`. The assistant is available at `/`; the storefront replica is available at `/blinkit`.
+- **Catalog scale:** add and benchmark a pgvector HNSW or IVFFlat index, inspect query plans, and batch/version embedding generation as catalog updates grow.
+- **Request volume:** pool database connections, isolate or serve the eagerly loaded embedding model independently, and scale stateless API workers only after measuring model memory and concurrent inference behavior.
+- **Inventory correctness:** replace randomized seed availability and browser-memory carts with authoritative inventory, persistent carts, and transactional/idempotent reservation flows; add load and relevance tests before setting SLOs.
 
-## API
-
-### `POST /api/blinkit-assistant`
-
-Request:
-
-```json
-{
-	"prompt": "Is paneer available?"
-}
-```
-
-The response has one of these shapes:
-
-| `type` | Purpose |
-| --- | --- |
-| `chat` | Natural-language response or catalog price answer in `message` |
-| `checklist` | Reviewable product or recipe results in `data`, plus a message |
-
-The frontend sends checklist items to the local cart only after the shopper selects them.
-
-## Development commands
-
-Run these from `recipe-cart-ui`:
-
-```bash
-npm run dev       # Start Vite with hot reload
-npm run build     # Create a production build
-npm run lint      # Run ESLint
-npm run preview   # Preview the production build
-```
-
+## Operational Notes
 
 > [!WARNING]
-> Keep database credentials and API keys in environment variables. Review the connection handling in [`backend/initialize_catalog.py`](backend/initialize_catalog.py) before using it in a shared or production environment; the file currently contains a connection string in source rather than reading `DATABASE_URL`.
+> `backend/initialize_catalog.py` contains a hard-coded database connection URL instead of reading `DATABASE_URL`. Do not run it; if that credential is active, rotate it and move connection settings to environment variables. The quick start uses `seed_catalog.py`, which also truncates `grocery_catalog` before loading data.
 
-## Limitations
+- The full seed assigns availability randomly; it is sample data, not live inventory.
+- The backend loads the sentence-transformers model at process startup. The initial run downloads model files, and each API process keeps the model in memory.
+- CORS currently allows all origins. Restrict it before exposing the API beyond local development.
 
-- The cart is held in browser memory and is not persisted.
-- The `/blinkit` storefront uses static sample products and controls; it is a visual replica, not a connected checkout flow.
-- Catalog search and recipe extraction depend on a reachable PostgreSQL database, a populated catalog, Gemini, and the local embedding model.
+## Repository Map
+
+```text
+backend/
+  main.py                 FastAPI routing, Gemini orchestration, retrieval, and matching
+  seed_catalog.py         BigBasket ingestion and local embedding generation
+  initialize_catalog.py  Small sample initializer (unsafe as committed; see warning)
+recipe-cart-ui/
+  src/App.jsx             Assistant chat, checklist review, and in-memory cart
+  blinkit-replica/        Static storefront, local search, categories, and cart UI
+```
+
+## Development Commands
+
+Run from `recipe-cart-ui`:
+
+```bash
+npm run dev       # Vite development server
+npm run build     # Production bundle
+npm run lint      # ESLint
+npm run preview   # Serve the production bundle locally
+```
