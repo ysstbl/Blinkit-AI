@@ -15,6 +15,10 @@ export default function App() {
       ? new URLSearchParams(window.location.search).get("prompt") || ""
       : ""
   );
+  const [isSuggestedPrompt, setIsSuggestedPrompt] = useState(() =>
+    window.location.pathname === "/assistant" &&
+    Boolean(new URLSearchParams(window.location.search).get("prompt"))
+  );
   const [messages, setMessages] = useState([
     {
       id: "welcome",
@@ -262,11 +266,22 @@ export default function App() {
             <input
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setIsSuggestedPrompt(false);
+              }}
               placeholder="e.g., 'Is heavy cream in stock?' or 'Paneer Butter Masala for 2'"
-              className="w-full bg-gray-100 rounded-xl py-3 pl-4 pr-10 text-sm outline-none focus:ring-1 focus:ring-[#0C831F]"
+              className={`w-full rounded-xl py-3 pl-4 pr-10 text-sm outline-none transition-colors transition-shadow duration-300 focus:ring-1 focus:ring-[#0C831F] ${
+                isSuggestedPrompt
+                  ? "bg-emerald-50 text-emerald-900 font-medium ring-2 ring-emerald-200"
+                  : "bg-gray-100 text-gray-900 font-normal"
+              }`}
             />
-            <Sparkles className="w-4 h-4 text-amber-500 absolute right-3 top-3.5 pointer-events-none" />
+            <Sparkles
+              className={`w-4 h-4 absolute right-3 top-3.5 pointer-events-none transition-colors duration-300 ${
+                isSuggestedPrompt ? "text-[#0C831F]" : "text-amber-500"
+              }`}
+            />
           </div>
           <button
             type="submit"
