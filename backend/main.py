@@ -11,6 +11,12 @@ from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+
 # Load the local vector model to bypass all API limits
 embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -18,7 +24,7 @@ app = FastAPI(title="Blinkit AI Assistant API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

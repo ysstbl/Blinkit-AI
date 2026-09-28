@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Sparkles, Send, AlertCircle, ShoppingCart, RefreshCw, Bot, User, X } from "lucide-react";
 import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
 
+const apiBaseUrl = import.meta.env.VITE_API_URL || "";
+
 function getCurrentRoute() {
   if (window.location.pathname === "/cart") return "cart";
   if (window.location.pathname === "/assistant") return "main";
@@ -61,7 +63,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/blinkit-assistant", {
+      const response = await fetch(`${apiBaseUrl}/api/blinkit-assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: userQuery }),

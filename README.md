@@ -89,6 +89,12 @@ Prerequisites: Python 3.10+, Node.js 20.19+ or 22.12+, a PostgreSQL database wit
 
 	Open the Vite URL (normally `http://localhost:5173`). The assistant is at `/`, and the static storefront is at `/blinkit`.
 
+	## Deploying to Render
+
+	The repository includes `render.yaml` for deploying the FastAPI backend and React static site as two Render services. In Render, create a Blueprint from this repository, then set the `DATABASE_URL` and `GEMINI_API_KEY` secrets for `blinkit-ai-api`. Replace the placeholder `ALLOWED_ORIGINS` value with the final frontend URL, and set `VITE_API_URL` on `blinkit-ai-ui` to the public API URL. `VITE_API_URL` is embedded during the frontend build, so redeploy the UI after changing it.
+
+	The database must have the `vector` extension and the `grocery_catalog` table before the API can answer requests. Run the catalog setup/seeding steps against the production database only after reviewing them; the seeder replaces existing catalog rows.
+
 ## API Contract
 
 `POST /api/blinkit-assistant` accepts `{"prompt":"Is paneer available?"}`. Responses use `type: "chat"` with a `message`, or `type: "checklist"` with a `message` and product/ingredient `data`. The Vite proxy is development-only; deploy the frontend and API behind an explicitly configured production origin and route.
