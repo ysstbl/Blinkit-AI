@@ -4,6 +4,19 @@ import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || "";
 
+function toCartProduct(item) {
+  const sku = item.selected_sku;
+
+  return {
+    name: sku.name,
+    weight: sku.pack_size,
+    price: Number(sku.price),
+    tag: item.is_substituted ? "Substitute" : "AI pick",
+    category: sku.category,
+    accent: "green",
+  };
+}
+
 function getCurrentRoute() {
   if (window.location.pathname === "/cart") return "cart";
   if (window.location.pathname === "/assistant") return "main";
@@ -43,7 +56,18 @@ export default function App() {
     setRoute(path === "/assistant" ? "main" : path === "/cart" ? "cart" : "blinkit");
   };
 
-  if (route === "blinkit" || route === "cart") return <BlinkitReplicaApp showCart={route === "cart"} />;
+  if (route === "blinkit" || route === "cart") {
+    return (
+      <BlinkitReplicaApp
+        showCart={route === "cart"}
+        cartItems={cartItems}
+        onAddToCart={(product) => setCartItems((currentCart) => [...currentCart, product])}
+        onRemoveFromCart={(itemIndex) =>
+          setCartItems((currentCart) => currentCart.filter((_, index) => index !== itemIndex))
+        }
+      />
+    );
+  }
 
   const handleSend = async (e) => {
     e?.preventDefault();
@@ -120,7 +144,9 @@ export default function App() {
       prev.map((msg) => {
         if (msg.id !== messageId) return msg;
 
-        const selectedItems = msg.items.filter((item) => item.selected && item.selected_sku);
+        const selectedItems = msg.items
+          .filter((item) => item.selected && item.selected_sku)
+          .map(toCartProduct);
         setCartItems((currentCart) => [...currentCart, ...selectedItems]);
 
         return { ...msg, items: msg.items.filter((item) => !item.selected) };
@@ -184,14 +210,14 @@ export default function App() {
             </div>
             <div className="space-y-1.5">
               {cartItems.map((item, index) => (
-                <div key={`${item.selected_sku.sku_id}-${index}`} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-800">{item.selected_sku.name}</span>
+                <div key={`${item.name}-${index}`} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-800">{item.name}</span>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold">₹{item.selected_sku.price}</span>
+                    <span className="font-semibold">₹{item.price}</span>
                     <button
                       type="button"
                       onClick={() => removeFromCart(index)}
-                      aria-label={`Remove ${item.selected_sku.name} from cart`}
+                      aria-label={`Remove ${item.name} from cart`}
                       className="p-1 text-gray-400 hover:text-red-600"
                     >
                       <X className="w-4 h-4" />

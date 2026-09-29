@@ -41,10 +41,14 @@ function getProductEmoji(name) {
   return '🍟';
 }
 
-export default function BlinkitReplicaApp({ showCart = false }) {
+export default function BlinkitReplicaApp({
+  showCart = false,
+  cartItems = [],
+  onAddToCart,
+  onRemoveFromCart,
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [cartItems, setCartItems] = useState([]);
   const [lastAdded, setLastAdded] = useState('');
 
   const visibleProducts = products.filter((product) => {
@@ -56,7 +60,7 @@ export default function BlinkitReplicaApp({ showCart = false }) {
   const cartTotal = cartItems.reduce((total, product) => total + product.price, 0);
 
   const addToCart = (product) => {
-    setCartItems((currentItems) => [...currentItems, product]);
+    onAddToCart(product);
     setLastAdded(product.name);
     window.setTimeout(() => setLastAdded(''), 1800);
   };
@@ -119,7 +123,7 @@ export default function BlinkitReplicaApp({ showCart = false }) {
           </section>
 
           {showCart ? (
-            <CartView items={cartItems} cartTotal={cartTotal} onRemove={(index) => setCartItems((currentItems) => currentItems.filter((_, itemIndex) => itemIndex !== index))} onContinue={() => navigateTo('/blinkit')} />
+            <CartView items={cartItems} cartTotal={cartTotal} onRemove={onRemoveFromCart} onContinue={() => navigateTo('/blinkit')} />
           ) : (
             <>
           <section className="hero-banner">
