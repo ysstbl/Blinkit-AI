@@ -30,6 +30,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def health_check():
+    return {"status": "ok", "service": "blinkit-ai-api"}
+
 # Configure LLM for the text reasoning (recipe extraction/routing)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 llm_model = genai.GenerativeModel('gemini-3.1-flash-lite') 
