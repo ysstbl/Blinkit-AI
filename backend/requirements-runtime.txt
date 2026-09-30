@@ -3,5 +3,6 @@ uvicorn
 pydantic
 psycopg2-binary
 huggingface_hub
+numpy
 google-generativeai
 python-dotenv
