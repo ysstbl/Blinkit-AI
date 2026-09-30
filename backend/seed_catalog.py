@@ -3,7 +3,7 @@ import glob
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
-from sentence_transformers import SentenceTransformer
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 import uuid
 import random
@@ -12,8 +12,11 @@ import kagglehub
 load_dotenv()
 DB_URL = os.getenv("DATABASE_URL")
 
-print("Loading local MiniLM model...")
-embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_client = InferenceClient(token=os.getenv("HF_TOKEN"))
+embedding_model = os.getenv(
+    "HF_EMBEDDING_MODEL",
+    "sentence-transformers/all-MiniLM-L6-v2",
+)
 
 print("Downloading full dataset...")
 dataset_path = kagglehub.dataset_download("surajjha101/bigbasket-entire-product-list-28k-datapoints")
@@ -22,8 +25,13 @@ csv_file = glob.glob(os.path.join(dataset_path, "*.csv"))[0]
 df = pd.read_csv(csv_file)
 df = df.dropna(subset=['product', 'sale_price']).reset_index(drop=True)
 df['enriched_text'] = "Category: " + df['category'].astype(str) + " | Sub-category: " + df['sub_category'].astype(str) + " | Product: " + df['product'].astype(str)
-print(f"Generating vectors for all {len(df)} items locally...")
-embeddings = embed_model.encode(df['enriched_text'].tolist(), show_progress_bar=True)
+print(f"Generating vectors for all {len(df)} items through Hugging Face...")
+embeddings = []
+for index, text in enumerate(df['enriched_text']):
+    embedding = embedding_client.feature_extraction(text, model=embedding_model)
+    embeddings.append(embedding.tolist())
+    if (index + 1) % 100 == 0:
+        print(f"Generated {index + 1}/{len(df)} embeddings")
 
 print("Uploading to Supabase (this takes about 10 seconds)...")
 conn = psycopg2.connect(DB_URL)

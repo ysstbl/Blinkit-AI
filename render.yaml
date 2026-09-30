@@ -3,15 +3,21 @@ services:
     name: blinkit-ai-api
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir -r requirements-runtime.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
       - key: ALLOWED_ORIGINS
         value: https://your-frontend-domain.example
+      - key: HF_HOME
+        value: /tmp/huggingface
 
   - type: web
     name: blinkit-ai-ui

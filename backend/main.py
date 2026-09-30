@@ -7,7 +7,7 @@ from pydantic import BaseModel
 import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-from sentence_transformers import SentenceTransformer
+from huggingface_hub import InferenceClient
 
 load_dotenv()
 
@@ -17,8 +17,18 @@ allowed_origins = [
     if origin.strip()
 ]
 
-# Load the local vector model to bypass all API limits
-embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+embedding_client = InferenceClient(token=os.getenv("HF_TOKEN"))
+embedding_model = os.getenv(
+    "HF_EMBEDDING_MODEL",
+    "sentence-transformers/all-MiniLM-L6-v2",
+)
+
+def create_embedding(text: str) -> list[float]:
+    embedding = embedding_client.feature_extraction(
+        text,
+        model=embedding_model,
+    )
+    return embedding.tolist()
 
 app = FastAPI(title="Blinkit AI Assistant API")
 
@@ -102,7 +112,7 @@ def search_catalog(ingredient_name: str, recipe_context: bool = False) -> list[M
     
     # 1. Generate local vector with lightweight prefix
     enriched_query = f"Product: {ingredient_name}"
-    vector = embed_model.encode(enriched_query).tolist()
+    vector = create_embedding(enriched_query)
     
     # 2. Cast a wide semantic net
     cur.execute("""
