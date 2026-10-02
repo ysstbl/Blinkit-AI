@@ -182,3 +182,116 @@
     border-right-color: var(--border);
   }
 }
+
+:root {
+  --ink: #17221f;
+  --muted-ink: #71807b;
+  --line: #dfe8e3;
+  --paper: #f4f7f4;
+  --panel: #ffffff;
+  --green: #176b5b;
+  --green-light: #dff1e9;
+  --gold: #c08a27;
+  --gold-light: #f7ecd0;
+  --coral: #c65b4b;
+  --blue: #4a7794;
+}
+
+.observability-shell {
+  min-height: 100vh;
+  color: var(--ink);
+  background: radial-gradient(circle at 84% -10%, #dbeee6 0, transparent 30%), var(--paper);
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.observability-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76px;
+  padding: 0 5vw;
+  border-bottom: 1px solid rgba(23, 34, 31, 0.1);
+  background: rgba(250, 252, 249, 0.86);
+  backdrop-filter: blur(14px);
+}
+
+.observability-brand, .observability-actions, .metric-card-top, .metric-card-bottom, .panel-heading, .panel-title, .health-footer, .health-rate, .recipe-stat, .latency-summary, .legend-row, .provider-row, .provider-label, .trace-id {
+  display: flex;
+  align-items: center;
+}
+
+.observability-brand { gap: 12px; }
+.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: white; background: var(--green); box-shadow: 0 6px 14px rgba(23, 107, 91, .2); }
+.eyebrow { margin: 0; color: var(--muted-ink); font: 600 10px/1.2 "Trebuchet MS", sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.observability-brand h1 { margin: 3px 0 0; font-size: 18px; letter-spacing: -.02em; }
+.observability-actions { gap: 10px; }
+.live-indicator { display: flex; align-items: center; gap: 7px; margin-right: 10px; color: var(--green); font: 600 12px "Trebuchet MS", sans-serif; }
+.live-indicator span { width: 7px; height: 7px; border-radius: 50%; background: #37b480; box-shadow: 0 0 0 4px #daf2e7; }
+.dashboard-button { display: flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; padding: 10px 13px; font: 700 11px "Trebuchet MS", sans-serif; cursor: pointer; }
+.dashboard-button-secondary { color: var(--ink); border: 1px solid var(--line); background: white; }
+.dashboard-button-primary { color: white; background: var(--ink); }
+.observability-content { max-width: 1440px; margin: 0 auto; padding: 48px 5vw 64px; }
+.dashboard-intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+.dashboard-intro h2 { margin: 8px 0 6px; font-size: clamp(30px, 4vw, 46px); line-height: .98; letter-spacing: -.05em; font-weight: 500; }
+.dashboard-subtitle { margin: 0; color: var(--muted-ink); font: 14px "Trebuchet MS", sans-serif; }
+.range-control { display: flex; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, .64); }
+.range-control button { min-width: 42px; border: 0; border-radius: 5px; padding: 8px 9px; color: var(--muted-ink); background: transparent; font: 700 11px "Trebuchet MS", sans-serif; cursor: pointer; }
+.range-control button.active { color: white; background: var(--green); box-shadow: 0 3px 8px rgba(23, 107, 91, .2); }
+.range-control .range-calendar { display: grid; place-items: center; min-width: 29px; border-left: 1px solid var(--line); border-radius: 0; }
+.metric-card-grid, .dashboard-grid { display: grid; gap: 14px; }
+.metric-card-grid { grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+.metric-card, .panel { border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, .9); box-shadow: 0 12px 24px rgba(34, 62, 53, .035); }
+.metric-card { min-width: 0; padding: 18px; overflow: hidden; }
+.metric-card-top { justify-content: space-between; margin-bottom: 19px; font: 700 11px "Trebuchet MS", sans-serif; }
+.metric-icon { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 8px; color: var(--green); background: var(--green-light); }
+.tone-amber .metric-icon { color: var(--gold); background: var(--gold-light); }
+.tone-blue .metric-icon { color: var(--blue); background: #e5eef4; }
+.tone-slate .metric-icon { color: #677a77; background: #e9eeee; }
+.metric-card p { margin: 0 0 6px; color: var(--muted-ink); font: 600 11px "Trebuchet MS", sans-serif; }
+.metric-card > strong { display: block; font-size: 28px; font-weight: 500; letter-spacing: -.04em; }
+.metric-card-bottom { justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--muted-ink); font: 10px "Trebuchet MS", sans-serif; }
+.metric-sparkline { width: 84px; height: 28px; color: var(--green); }
+.metric-card-bottom .metric-sparkline { flex: 0 0 84px; }
+.positive { color: var(--green); }
+.negative { color: var(--coral); }
+.dashboard-grid-main { grid-template-columns: minmax(0, 1.45fr) minmax(330px, .8fr); }
+.dashboard-grid-secondary { grid-template-columns: 1fr 1fr; margin-top: 14px; }
+.panel { padding: 20px; }
+.panel-heading { justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.panel-title { gap: 10px; }
+.panel-title > span { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 7px; color: var(--green); background: var(--green-light); }
+.panel-title h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.panel-title p { margin: 3px 0 0; color: var(--muted-ink); font: 10px "Trebuchet MS", sans-serif; }
+.panel-heading button { display: flex; align-items: center; gap: 4px; border: 0; color: var(--green); background: transparent; font: 700 10px "Trebuchet MS", sans-serif; cursor: pointer; }
+.latency-summary, .health-rate, .recipe-stat { gap: 11px; margin: 20px 0 16px; }
+.latency-summary strong, .health-rate strong, .recipe-stat strong { font-size: 30px; font-weight: 500; letter-spacing: -.04em; }
+.latency-summary span, .health-rate span, .recipe-stat span { color: var(--muted-ink); font: 11px "Trebuchet MS", sans-serif; }
+.latency-summary .positive, .health-rate .negative, .recipe-stat .positive { display: flex; align-items: center; gap: 4px; margin-left: auto; font-weight: 700; }
+.large-chart { display: flex; height: 178px; gap: 10px; }
+.chart-y-labels, .chart-x-labels { display: flex; flex-direction: column; justify-content: space-between; color: #96a49f; font: 9px "Trebuchet MS", sans-serif; }
+.chart-area { position: relative; flex: 1; padding-bottom: 24px; }
+.chart-grid-lines { position: absolute; inset: 0 0 24px; display: flex; flex-direction: column; justify-content: space-between; }
+.chart-grid-lines i { display: block; border-top: 1px dashed #dce6e0; }
+.chart-area .metric-sparkline { position: absolute; inset: 16px 0 35px; width: 100%; height: calc(100% - 51px); }
+.chart-x-labels { position: absolute; right: 0; bottom: 0; left: 0; flex-direction: row; }
+.legend-row { gap: 18px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted-ink); font: 10px "Trebuchet MS", sans-serif; }
+.legend-row span { display: flex; align-items: center; gap: 5px; }
+.legend-row strong { color: var(--ink); }
+.legend-dot { width: 7px; height: 7px; border-radius: 50%; }.legend-dot.green { background: var(--green); }.legend-dot.gold { background: var(--gold); }.legend-dot.coral { background: var(--coral); }
+.health-rate { flex-wrap: wrap; }.health-rate .negative { color: var(--coral); }
+.intent-list { display: grid; gap: 17px; margin-top: 28px; }
+.intent-row > div:first-child { display: flex; justify-content: space-between; margin-bottom: 7px; color: var(--muted-ink); font: 11px "Trebuchet MS", sans-serif; }.intent-row strong { color: var(--ink); }
+.intent-track, .provider-track { height: 6px; overflow: hidden; border-radius: 5px; background: #edf2ee; }.intent-track i, .provider-track i { display: block; height: 100%; border-radius: inherit; }.intent-track .green, .provider-track .green { background: var(--green); }.intent-track .gold, .provider-track .gold { background: var(--gold); }.intent-track .coral { background: var(--coral); }.intent-track .blue, .provider-track .blue { background: var(--blue); }
+.health-footer { justify-content: space-between; margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--green); font: 10px "Trebuchet MS", sans-serif; }.health-footer span { display: flex; align-items: center; gap: 5px; }.health-footer strong { color: var(--muted-ink); font-weight: 500; }
+.provider-panel, .recipe-panel { min-height: 250px; }.provider-row { gap: 15px; margin-top: 26px; }.provider-label { flex-direction: column; align-items: flex-start; width: 125px; gap: 4px; }.provider-label strong { font-size: 13px; font-weight: 600; }.provider-label span { color: var(--muted-ink); font: 9px "Trebuchet MS", sans-serif; white-space: nowrap; }.provider-track { flex: 1; }.provider-value { width: 56px; text-align: right; font: 600 12px "Trebuchet MS", sans-serif; }
+.recipe-stat { margin-bottom: 8px; }.scatter-chart { position: relative; height: 120px; margin: 10px 4px 0 38px; border-bottom: 1px solid #bfd1c7; border-left: 1px solid #bfd1c7; background: repeating-linear-gradient(0deg, transparent 0 29px, #edf3ef 30px), repeating-linear-gradient(90deg, transparent 0 78px, #edf3ef 79px); }.scatter-chart i { position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(23, 107, 91, .11); }.axis-y, .axis-x { position: absolute; color: var(--muted-ink); font: 9px "Trebuchet MS", sans-serif; }.axis-y { top: 50%; left: -34px; transform: rotate(-90deg); }.axis-x { right: 0; bottom: -19px; }
+.traces-panel { margin-top: 14px; }.trace-table-wrap { overflow-x: auto; }.trace-table { width: 100%; border-collapse: collapse; text-align: left; font: 11px "Trebuchet MS", sans-serif; }.trace-table th { padding: 14px 10px 10px; color: var(--muted-ink); font-size: 9px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }.trace-table td { padding: 15px 10px; border-top: 1px solid var(--line); white-space: nowrap; }.trace-id { gap: 8px; color: var(--ink); font-family: monospace; }.trace-status { width: 7px; height: 7px; border-radius: 50%; background: #3ab582; }.trace-status.error { background: var(--coral); }.route-cell { color: var(--muted-ink); }.status-pill { display: inline-block; border-radius: 4px; padding: 4px 7px; font-size: 10px; font-weight: 700; }.status-ok { color: var(--green); background: var(--green-light); }.status-error { color: var(--coral); background: #fae3de; }
+
+@media (max-width: 900px) {
+  .metric-card-grid { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-grid-main, .dashboard-grid-secondary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .observability-header { align-items: flex-start; flex-direction: column; gap: 15px; padding: 18px 20px; }.observability-actions { width: 100%; justify-content: space-between; }.live-indicator { margin-right: auto; }.observability-content { padding: 32px 20px 48px; }.dashboard-intro { align-items: flex-start; flex-direction: column; }.range-control { align-self: stretch; justify-content: space-between; }.range-control button { flex: 1; }.metric-card-grid { gap: 10px; }.metric-card { padding: 14px; }.metric-card > strong { font-size: 24px; }.metric-card-bottom { align-items: flex-start; flex-direction: column; gap: 1px; }.metric-card-bottom .metric-sparkline { align-self: flex-end; margin-top: -22px; }.panel { padding: 16px; }.latency-summary, .health-rate, .recipe-stat { align-items: flex-start; flex-wrap: wrap; }.latency-summary .positive, .health-rate .negative, .recipe-stat .positive { margin-left: 0; width: 100%; }.trace-table { min-width: 650px; }
+}
