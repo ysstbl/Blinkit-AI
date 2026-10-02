@@ -22,6 +22,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import "./App.css";
 import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || "";
