@@ -6,3 +6,6 @@ huggingface_hub
 numpy
 google-generativeai
 python-dotenv
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-prometheus

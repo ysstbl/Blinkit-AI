@@ -531,7 +531,55 @@ function MetricSparkline({ points, color = "#176b5b" }) {
 
 function ObservabilityDashboard({ onNavigate }) {
   const [range, setRange] = useState("24h");
-  const data = dashboardData[range];
+  const [summary, setSummary] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${apiBaseUrl}/api/observability/summary?window=${range}&environment_filter=production`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Metrics unavailable"))))
+      .then((payload) => {
+        if (active) setSummary(payload);
+      })
+      .catch(() => {
+        if (active) setSummary({ status: "unavailable" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [range]);
+
+  const preview = dashboardData[range];
+  const live = summary?.status === "ok";
+  const liveMetrics = summary?.metrics;
+  const formatMs = (value, fallback) => value == null ? fallback : `${value} ms`;
+  const data = live ? {
+    requests: liveMetrics.request_sample_count.toLocaleString(),
+    requestChange: "production traffic",
+    p50: formatMs(liveMetrics.request_p50_ms, "No data"),
+    p95: formatMs(liveMetrics.request_p95_ms, "No data"),
+    p99: formatMs(liveMetrics.request_p99_ms, "No data"),
+    errorRate: liveMetrics.request_sample_count ? `${((liveMetrics.request_error_count / liveMetrics.request_sample_count) * 100).toFixed(2)}%` : "0%",
+    gemini: formatMs(liveMetrics.gemini_p95_ms, "No data"),
+    huggingFace: formatMs(liveMetrics.huggingface_p95_ms, "No data"),
+    postgres: formatMs(liveMetrics.postgresql_p95_ms, "No data"),
+    dbErrors: liveMetrics.database_error_count,
+    recipe: formatMs(liveMetrics.intent_p95_ms.RECIPE_EXTRACTION?.p95_ms, "No data"),
+    chart: preview.chart,
+  } : preview;
+  const intentRows = live ? [
+    ["Recipe extraction", liveMetrics.intent_p95_ms.RECIPE_EXTRACTION, "green"],
+    ["Inventory query", liveMetrics.intent_p95_ms.INVENTORY_QUERY, "gold"],
+    ["Catalog query", liveMetrics.intent_p95_ms.CATALOG_QUERY, "coral"],
+    ["General chat", liveMetrics.intent_p95_ms.CHAT, "blue"],
+  ] : [
+    ["Recipe extraction", { error_rate_pct: 1.1 }, "green"],
+    ["Inventory query", { error_rate_pct: 0.6 }, "gold"],
+    ["Catalog query", { error_rate_pct: 3.8 }, "coral"],
+    ["General chat", { error_rate_pct: 0.2 }, "blue"],
+  ];
+  const sourceLabel = live
+    ? `${summary.environment} traffic / ${summary.window} / n = ${data.requests} requests`
+    : "Preview data / Prometheus metrics unavailable";
 
   return (
     <div className="observability-shell">
@@ -557,7 +605,7 @@ function ObservabilityDashboard({ onNavigate }) {
       <main className="observability-content">
         <section className="dashboard-intro">
           <div>
-            <p className="eyebrow">Friday, October 2, 2026</p>
+            <p className="eyebrow">{sourceLabel}</p>
             <h2>Everything is moving.</h2>
             <p className="dashboard-subtitle">A clear read on requests, model calls, and recipe generation.</p>
           </div>
@@ -597,12 +645,11 @@ function ObservabilityDashboard({ onNavigate }) {
             <PanelHeading icon={<Radio size={16} />} title="Request health" meta="by intent" action="Inspect errors" />
             <div className="health-rate"><strong>{data.errorRate}</strong><span>error rate</span><span className="negative"><TriangleAlert size={13} /> +0.3%</span></div>
             <div className="intent-list">
-              <IntentRow label="Recipe extraction" value="1.1%" width="38%" color="green" />
-              <IntentRow label="Inventory query" value="0.6%" width="22%" color="gold" />
-              <IntentRow label="Catalog query" value="3.8%" width="68%" color="coral" />
-              <IntentRow label="General chat" value="0.2%" width="12%" color="blue" />
+              {intentRows.map(([label, metric, color]) => (
+                <IntentRow key={label} label={label} value={live ? `${formatMs(metric.p95_ms, "No data")} / ${metric.error_rate_pct}% err` : `${metric.error_rate_pct}%`} width={`${Math.min(metric.error_rate_pct * 18, 100)}%`} color={color} />
+              ))}
             </div>
-            <div className="health-footer"><span><CheckCircle2 size={14} /> 97.6% successful requests</span><strong>{data.requests} requests</strong></div>
+            <div className="health-footer"><span><CheckCircle2 size={14} /> {live ? `${(100 - Number(data.errorRate.replace("%", ""))).toFixed(2)}% successful requests` : "Preview request health"}</span><strong>{data.requests} requests</strong></div>
           </article>
         </section>
 
@@ -612,6 +659,7 @@ function ObservabilityDashboard({ onNavigate }) {
             <ProviderRow label="Gemini" detail="gemini-3.1-flash-lite" value={data.gemini} width="82%" color="gold" />
             <ProviderRow label="Hugging Face" detail="all-MiniLM-L6-v2" value={data.huggingFace} width="32%" color="blue" />
             <ProviderRow label="PostgreSQL" detail="pgvector / catalog" value={data.postgres} width="16%" color="green" />
+            <div className="database-error-callout"><TriangleAlert size={14} /><span>Database errors</span><strong>{live ? data.dbErrors : "Preview"}</strong></div>
           </article>
           <article className="panel recipe-panel">
             <PanelHeading icon={<GitBranch size={16} />} title="Recipe complexity" meta="latency versus ingredients" action="Explore" />
