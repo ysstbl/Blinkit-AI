@@ -112,15 +112,22 @@ Prerequisites: Python 3.10+, Node.js 20.19+ or 22.12+, a PostgreSQL database wit
 
 - The full seed assigns availability randomly; it is sample data, not live inventory.
 - The backend loads the sentence-transformers model at process startup. The initial run downloads model files, and each API process keeps the model in memory.
-- CORS currently allows all origins. Restrict it before exposing the API beyond local development.
+- CORS is controlled by the comma-separated `ALLOWED_ORIGINS` environment variable.
 
 ## Repository Map
 
 ```text
 backend/
-  main.py                 FastAPI routing, Gemini orchestration, retrieval, and matching
+  main.py                 FastAPI app setup, middleware, and route registration
+  app/
+    api/routes/           HTTP endpoints for the assistant and health check
+    clients/               Gemini, Hugging Face, and PostgreSQL integrations
+    core/config.py         Environment-backed application settings
+    models/                API and LLM data schemas
+    repositories/          Catalog SQL queries
+    services/              Intent, catalog, recipe, checklist, and assistant logic
   seed_catalog.py         BigBasket ingestion and local embedding generation
-  initialize_catalog.py  Small sample initializer (unsafe as committed; see warning)
+  initialize_catalog.py   Small sample initializer (unsafe as committed; see warning)
 recipe-cart-ui/
   src/App.jsx             Assistant chat, checklist review, and in-memory cart
   blinkit-replica/        Static storefront, local search, categories, and cart UI

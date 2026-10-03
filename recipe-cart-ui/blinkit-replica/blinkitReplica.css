@@ -161,21 +161,6 @@ button {
   cursor: pointer;
 }
 
-.observability-button {
-  border: 1px solid rgba(12, 131, 31, 0.25);
-  background: #f0f8ee;
-  color: var(--blinkit-green-dark);
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.observability-button:hover {
-  background: #e4f3e0;
-}
-
 .blinkit-main {
   padding: 20px 24px 28px;
 }

@@ -1,26 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  Activity,
   AlertCircle,
-  ArrowUpRight,
   Bot,
-  CheckCircle2,
-  ChevronDown,
-  Clock3,
-  Database,
-  Gauge,
-  GitBranch,
-  Layers3,
-  Radio,
   RefreshCw,
   Send,
-  Server,
   ShoppingCart,
   Sparkles,
-  TriangleAlert,
   User,
   X,
-  Zap,
 } from "lucide-react";
 import "./App.css";
 import BlinkitReplicaApp from "../blinkit-replica/App.jsx";
@@ -42,7 +29,6 @@ function toCartProduct(item) {
 
 function getCurrentRoute() {
   if (window.location.pathname === "/cart") return "cart";
-  if (window.location.pathname === "/dashboard") return "dashboard";
   if (window.location.pathname === "/assistant") return "main";
   return "blinkit";
 }
@@ -82,13 +68,9 @@ export default function App() {
         ? "main"
         : path === "/cart"
           ? "cart"
-          : path === "/dashboard"
-            ? "dashboard"
-            : "blinkit"
+          : "blinkit"
     );
   };
-
-  if (route === "dashboard") return <ObservabilityDashboard onNavigate={navigate} />;
 
   if (route === "blinkit" || route === "cart") {
     return (
@@ -452,254 +434,4 @@ function RecipeCartWidget({ items, onToggleItem, onAddToCart }) {
       </div>
     </div>
   );
-}
-
-const dashboardRanges = ["15m", "1h", "24h", "7d"];
-
-const dashboardData = {
-  "15m": {
-    requests: "1,284",
-    requestChange: "+8.2%",
-    p50: "284 ms",
-    p95: "742 ms",
-    p99: "1.84 s",
-    errorRate: "1.8%",
-    gemini: "612 ms",
-    huggingFace: "188 ms",
-    postgres: "42 ms",
-    recipe: "496 ms",
-    chart: [34, 39, 36, 44, 42, 54, 48, 52, 46, 61, 57, 65, 58, 69, 64, 72],
-  },
-  "1h": {
-    requests: "5,906",
-    requestChange: "+4.7%",
-    p50: "301 ms",
-    p95: "781 ms",
-    p99: "1.92 s",
-    errorRate: "2.1%",
-    gemini: "648 ms",
-    huggingFace: "201 ms",
-    postgres: "47 ms",
-    recipe: "518 ms",
-    chart: [31, 35, 40, 37, 44, 47, 43, 51, 55, 52, 58, 61, 56, 63, 68, 64],
-  },
-  "24h": {
-    requests: "42,812",
-    requestChange: "+12.4%",
-    p50: "296 ms",
-    p95: "768 ms",
-    p99: "1.88 s",
-    errorRate: "2.4%",
-    gemini: "631 ms",
-    huggingFace: "196 ms",
-    postgres: "45 ms",
-    recipe: "507 ms",
-    chart: [28, 33, 30, 41, 38, 47, 45, 53, 49, 58, 55, 63, 60, 67, 64, 71],
-  },
-  "7d": {
-    requests: "286,440",
-    requestChange: "+16.8%",
-    p50: "312 ms",
-    p95: "804 ms",
-    p99: "2.06 s",
-    errorRate: "2.7%",
-    gemini: "679 ms",
-    huggingFace: "214 ms",
-    postgres: "51 ms",
-    recipe: "534 ms",
-    chart: [35, 29, 38, 42, 39, 48, 44, 55, 52, 58, 54, 65, 61, 69, 66, 74],
-  },
-};
-
-function MetricSparkline({ points, color = "#176b5b" }) {
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const coordinates = points
-    .map((point, index) => {
-      const x = (index / (points.length - 1)) * 180;
-      const y = 42 - ((point - min) / Math.max(max - min, 1)) * 30;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg className="metric-sparkline" viewBox="0 0 180 48" role="img" aria-label="Metric trend">
-      <polyline points={coordinates} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ObservabilityDashboard({ onNavigate }) {
-  const [range, setRange] = useState("24h");
-  const [summary, setSummary] = useState(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch(`${apiBaseUrl}/api/observability/summary?window=${range}&environment_filter=production`)
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Metrics unavailable"))))
-      .then((payload) => {
-        if (active) setSummary(payload);
-      })
-      .catch(() => {
-        if (active) setSummary({ status: "unavailable" });
-      });
-    return () => {
-      active = false;
-    };
-  }, [range]);
-
-  const preview = dashboardData[range];
-  const live = summary?.status === "ok";
-  const liveMetrics = summary?.metrics;
-  const formatMs = (value, fallback) => value == null ? fallback : `${value} ms`;
-  const data = live ? {
-    requests: liveMetrics.request_sample_count.toLocaleString(),
-    requestChange: "production traffic",
-    p50: formatMs(liveMetrics.request_p50_ms, "No data"),
-    p95: formatMs(liveMetrics.request_p95_ms, "No data"),
-    p99: formatMs(liveMetrics.request_p99_ms, "No data"),
-    errorRate: liveMetrics.request_sample_count ? `${((liveMetrics.request_error_count / liveMetrics.request_sample_count) * 100).toFixed(2)}%` : "0%",
-    gemini: formatMs(liveMetrics.gemini_p95_ms, "No data"),
-    huggingFace: formatMs(liveMetrics.huggingface_p95_ms, "No data"),
-    postgres: formatMs(liveMetrics.postgresql_p95_ms, "No data"),
-    dbErrors: liveMetrics.database_error_count,
-    recipe: formatMs(liveMetrics.intent_p95_ms.RECIPE_EXTRACTION?.p95_ms, "No data"),
-    chart: preview.chart,
-  } : preview;
-  const intentRows = live ? [
-    ["Recipe extraction", liveMetrics.intent_p95_ms.RECIPE_EXTRACTION, "green"],
-    ["Inventory query", liveMetrics.intent_p95_ms.INVENTORY_QUERY, "gold"],
-    ["Catalog query", liveMetrics.intent_p95_ms.CATALOG_QUERY, "coral"],
-    ["General chat", liveMetrics.intent_p95_ms.CHAT, "blue"],
-  ] : [
-    ["Recipe extraction", { error_rate_pct: 1.1 }, "green"],
-    ["Inventory query", { error_rate_pct: 0.6 }, "gold"],
-    ["Catalog query", { error_rate_pct: 3.8 }, "coral"],
-    ["General chat", { error_rate_pct: 0.2 }, "blue"],
-  ];
-  const sourceLabel = live
-    ? `${summary.environment} traffic / ${summary.window} / n = ${data.requests} requests`
-    : "Preview data / Prometheus metrics unavailable";
-
-  return (
-    <div className="observability-shell">
-      <header className="observability-header">
-        <div className="observability-brand">
-          <div className="brand-mark"><Activity size={18} /></div>
-          <div>
-            <p className="eyebrow">Blinkit AI / Observability</p>
-            <h1>System pulse</h1>
-          </div>
-        </div>
-        <div className="observability-actions">
-          <span className="live-indicator"><span /> Live data</span>
-          <button className="dashboard-button dashboard-button-secondary" type="button" onClick={() => onNavigate("/blinkit")}>
-            <ShoppingCart size={15} /> Storefront
-          </button>
-          <button className="dashboard-button dashboard-button-primary" type="button" onClick={() => onNavigate("/assistant")}>
-            Open assistant <ArrowUpRight size={15} />
-          </button>
-        </div>
-      </header>
-
-      <main className="observability-content">
-        <section className="dashboard-intro">
-          <div>
-            <p className="eyebrow">{sourceLabel}</p>
-            <h2>Everything is moving.</h2>
-            <p className="dashboard-subtitle">A clear read on requests, model calls, and recipe generation.</p>
-          </div>
-          <div className="range-control" role="group" aria-label="Time range">
-            {dashboardRanges.map((option) => (
-              <button key={option} type="button" className={range === option ? "active" : ""} onClick={() => setRange(option)}>
-                {option}
-              </button>
-            ))}
-            <button type="button" className="range-calendar" aria-label="Select custom date range"><ChevronDown size={15} /></button>
-          </div>
-        </section>
-
-        <section className="metric-card-grid" aria-label="Key metrics">
-          <MetricCard icon={<Gauge size={17} />} label="API p95 latency" value={data.p95} detail={`p50 ${data.p50} / p99 ${data.p99}`} trend="+3.1%" tone="green" sparkline={data.chart} />
-          <MetricCard icon={<Zap size={17} />} label="Gemini latency" value={data.gemini} detail="generation span" trend="-6.4%" tone="amber" sparkline={data.chart.map((point) => point - 7)} />
-          <MetricCard icon={<Layers3 size={17} />} label="Hugging Face latency" value={data.huggingFace} detail="embedding span" trend="-2.8%" tone="blue" sparkline={data.chart.map((point) => point - 14)} />
-          <MetricCard icon={<Database size={17} />} label="PostgreSQL query" value={data.postgres} detail="average duration" trend="+1.4%" tone="slate" sparkline={data.chart.map((point) => point - 22)} />
-        </section>
-
-        <section className="dashboard-grid dashboard-grid-main">
-          <article className="panel latency-panel">
-            <PanelHeading icon={<Activity size={16} />} title="API latency" meta="milliseconds" action="View traces" />
-            <div className="latency-summary"><strong>{data.p95}</strong><span>p95 request duration</span><span className="positive">{data.requestChange} volume</span></div>
-            <div className="large-chart">
-              <div className="chart-y-labels"><span>2s</span><span>1s</span><span>500ms</span><span>0</span></div>
-              <div className="chart-area">
-                <div className="chart-grid-lines"><i /><i /><i /><i /></div>
-                <MetricSparkline points={data.chart} color="#176b5b" />
-                <div className="chart-x-labels"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>Now</span></div>
-              </div>
-            </div>
-            <div className="legend-row"><span><i className="legend-dot green" /> p50 <strong>{data.p50}</strong></span><span><i className="legend-dot gold" /> p95 <strong>{data.p95}</strong></span><span><i className="legend-dot coral" /> p99 <strong>{data.p99}</strong></span></div>
-          </article>
-
-          <article className="panel health-panel">
-            <PanelHeading icon={<Radio size={16} />} title="Request health" meta="by intent" action="Inspect errors" />
-            <div className="health-rate"><strong>{data.errorRate}</strong><span>error rate</span><span className="negative"><TriangleAlert size={13} /> +0.3%</span></div>
-            <div className="intent-list">
-              {intentRows.map(([label, metric, color]) => (
-                <IntentRow key={label} label={label} value={live ? `${formatMs(metric.p95_ms, "No data")} / ${metric.error_rate_pct}% err` : `${metric.error_rate_pct}%`} width={`${Math.min(metric.error_rate_pct * 18, 100)}%`} color={color} />
-              ))}
-            </div>
-            <div className="health-footer"><span><CheckCircle2 size={14} /> {live ? `${(100 - Number(data.errorRate.replace("%", ""))).toFixed(2)}% successful requests` : "Preview request health"}</span><strong>{data.requests} requests</strong></div>
-          </article>
-        </section>
-
-        <section className="dashboard-grid dashboard-grid-secondary">
-          <article className="panel provider-panel">
-            <PanelHeading icon={<Server size={16} />} title="Dependency latency" meta="average duration" action="Open spans" />
-            <ProviderRow label="Gemini" detail="gemini-3.1-flash-lite" value={data.gemini} width="82%" color="gold" />
-            <ProviderRow label="Hugging Face" detail="all-MiniLM-L6-v2" value={data.huggingFace} width="32%" color="blue" />
-            <ProviderRow label="PostgreSQL" detail="pgvector / catalog" value={data.postgres} width="16%" color="green" />
-            <div className="database-error-callout"><TriangleAlert size={14} /><span>Database errors</span><strong>{live ? data.dbErrors : "Preview"}</strong></div>
-          </article>
-          <article className="panel recipe-panel">
-            <PanelHeading icon={<GitBranch size={16} />} title="Recipe complexity" meta="latency versus ingredients" action="Explore" />
-            <div className="recipe-stat"><strong>{data.recipe}</strong><span>average recipe latency</span><span className="positive">-4.2%</span></div>
-            <div className="scatter-chart">
-              {[{ x: 10, y: 67 }, { x: 24, y: 58 }, { x: 37, y: 54 }, { x: 51, y: 42 }, { x: 65, y: 36 }, { x: 77, y: 28 }, { x: 91, y: 20 }].map((point) => <i key={`${point.x}-${point.y}`} style={{ left: `${point.x}%`, bottom: `${point.y}%` }} />)}
-              <span className="axis-y">latency</span><span className="axis-x">ingredient count</span>
-            </div>
-          </article>
-        </section>
-
-        <section className="panel traces-panel">
-          <PanelHeading icon={<Clock3 size={16} />} title="Recent traces" meta="latest request activity" action="See all traces" />
-          <div className="trace-table-wrap"><table className="trace-table"><thead><tr><th>Trace</th><th>Intent</th><th>Route</th><th>Duration</th><th>Database</th><th>Status</th></tr></thead><tbody>
-            <TraceRow id="tr_9f83a1" intent="Recipe extraction" route="POST /api/blinkit-assistant" duration="438 ms" database="34 ms" status="200" />
-            <TraceRow id="tr_9f82dd" intent="Catalog query" route="POST /api/blinkit-assistant" duration="1.12 s" database="86 ms" status="500" error />
-            <TraceRow id="tr_9f8210" intent="Inventory query" route="POST /api/blinkit-assistant" duration="291 ms" database="28 ms" status="200" />
-          </tbody></table></div>
-        </section>
-      </main>
-    </div>
-  );
-}
-
-function MetricCard({ icon, label, value, detail, trend, tone, sparkline }) {
-  return <article className={`metric-card tone-${tone}`}><div className="metric-card-top"><span className="metric-icon">{icon}</span><span className={trend.startsWith("-") ? "positive" : "negative"}>{trend}</span></div><p>{label}</p><strong>{value}</strong><div className="metric-card-bottom"><span>{detail}</span><MetricSparkline points={sparkline} color="currentColor" /></div></article>;
-}
-
-function PanelHeading({ icon, title, meta, action }) {
-  return <div className="panel-heading"><div className="panel-title"><span>{icon}</span><div><h3>{title}</h3><p>{meta}</p></div></div><button type="button">{action}<ArrowUpRight size={14} /></button></div>;
-}
-
-function IntentRow({ label, value, width, color }) {
-  return <div className="intent-row"><div><span>{label}</span><strong>{value}</strong></div><div className="intent-track"><i className={color} style={{ width }} /></div></div>;
-}
-
-function ProviderRow({ label, detail, value, width, color }) {
-  return <div className="provider-row"><div className="provider-label"><strong>{label}</strong><span>{detail}</span></div><div className="provider-track"><i className={color} style={{ width }} /></div><strong className="provider-value">{value}</strong></div>;
-}
-
-function TraceRow({ id, intent, route, duration, database, status, error }) {
-  return <tr><td><span className="trace-id"><span className={`trace-status ${error ? "error" : ""}`} />{id}</span></td><td>{intent}</td><td className="route-cell">{route}</td><td>{duration}</td><td>{database}</td><td><span className={`status-pill ${error ? "status-error" : "status-ok"}`}>{status}</span></td></tr>;
 }

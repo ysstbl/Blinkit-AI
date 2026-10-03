@@ -18,10 +18,6 @@ services:
         value: https://your-frontend-domain.example
       - key: HF_HOME
         value: /tmp/huggingface
-      - key: OTEL_ENVIRONMENT
-        value: production
-      - key: PROMETHEUS_URL
-        sync: false
 
   - type: web
     name: blinkit-ai-ui

@@ -103,9 +103,6 @@ export default function BlinkitReplicaApp({
                 </button>
               )}
             </label>
-            <button type="button" className="observability-button" onClick={() => window.location.assign('/dashboard')}>
-              Observability
-            </button>
             <button type="button" className="profile-button">Login</button>
           </div>
         </header>
