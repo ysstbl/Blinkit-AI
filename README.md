@@ -4,6 +4,8 @@
 
 ![Blinkit AI assistant interface](recipe-cart-ui/src/assets/ai-assistant.png)
 
+**Live demo:** [blinkit-ai-ochre.vercel.app](https://blinkit-ai-ochre.vercel.app)
+
 ## Why this project
 
 Most grocery search starts with a product. Blinkit AI starts with the shopper's intent:
@@ -74,16 +76,16 @@ In the implementation, that pipeline maps to:
 
 ## Demo
 
-Run the project locally using the setup below, then try:
+Try the deployed application at [blinkit-ai-ochre.vercel.app](https://blinkit-ai-ochre.vercel.app), or run the project locally using the setup below.
+
+Suggested prompts:
 
 - `Give me everything I need to make paneer tikka`
 - `Find olive oil and add it to my list`
 - `What is the cheapest dairy item?`
 - `Is paneer available?`
 
-The assistant UI is available at `/assistant`. The static storefront is available at `/blinkit`, and the browser-memory cart is available at `/cart`.
-
-For a portfolio deployment, the next presentation step is to publish the two services described in [render.yaml](render.yaml), add a short walkthrough video, and place the live demo URL here.
+In the deployed frontend, the assistant UI is available at `/assistant`. The static storefront is available at `/blinkit`, and the browser-memory cart is available at `/cart`.
 
 ## Architecture
 
@@ -348,7 +350,9 @@ npm run build
 
 ## Deployment
 
-[render.yaml](render.yaml) defines separate Render services for the backend and frontend. Configure:
+The frontend is deployed at [blinkit-ai-ochre.vercel.app](https://blinkit-ai-ochre.vercel.app). The repository also includes [render.yaml](render.yaml) for deploying the frontend and FastAPI backend as separate Render services if you want to reproduce the deployment.
+
+For a reproduced deployment, configure:
 
 - `DATABASE_URL`
 - `GEMINI_API_KEY`
