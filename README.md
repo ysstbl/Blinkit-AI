@@ -1,145 +1,413 @@
 # Blinkit AI
 
-Blinkit AI is a quick-commerce extension concept that helps customers shop for a recipe without searching for every ingredient individually: describe a dish, get its ingredients matched to grocery catalog products, review availability or substitutes, then add chosen items to a cart. Gemini handles intent and recipe extraction, while local MiniLM embeddings and PostgreSQL/pgvector connect each ingredient to catalog SKUs.
+> AI recipe-to-cart assistant that converts natural-language meal requests into verified grocery checklists using structured Gemini extraction, vector search, lexical reranking, and out-of-stock substitution.
 
 ![Blinkit AI assistant interface](recipe-cart-ui/src/assets/ai-assistant.png)
 
-## Quick-Commerce Recipe Flow
+## Why this project
 
-The core use case starts with a meal, not a product search. A customer can ask for the ingredients needed for a dish; the assistant extracts ingredient names and quantities, normalizes them to familiar grocery terms, and searches the catalog for relevant SKUs. Each match includes pack size, price, and availability. When the closest match is unavailable, the assistant can suggest an in-stock alternative. The customer reviews the checklist, changes selections, and adds only the chosen items to the cart.
+Most grocery search starts with a product. Blinkit AI starts with the shopper's intent:
 
-This reduces the work of translating a recipe into a basket: shoppers do not have to leave the cooking intent, search item by item, compare pack options, and manually rebuild a list. Direct product availability and price questions are supported too, but recipe-to-cart is the primary workflow.
+> “I want to make paneer tikka for four people.”
 
-The repository demonstrates an integration pattern for a quick-commerce experience, not a production plugin for a specific commerce platform. The AI assistant has its own API and catalog; the Blinkit-style storefront routes currently use separate static sample products and an in-memory cart.
+The assistant extracts the ingredients, normalizes grocery terminology, matches each ingredient to catalog SKUs, handles unavailable products, and lets the shopper confirm the final checklist before adding items to a cart.
 
-## Architecture & System Design
+This project demonstrates an end-to-end AI retrieval workflow rather than a chatbot connected directly to a database:
+
+- Gemini performs structured intent classification and recipe extraction.
+- Hugging Face `all-MiniLM-L6-v2` creates query embeddings.
+- PostgreSQL with pgvector retrieves semantic candidates.
+- A domain-specific lexical reranker reduces incorrect matches such as processed products returned for raw ingredients.
+- Typed responses preserve price, pack size, availability, and substitution context.
+- The UI requires user confirmation before products reach the cart.
+
+## Product flow
+
+```text
+“What do I need to make paneer tikka?”
+                    ↓
+        Structured recipe extraction
+                    ↓
+       Grocery-term normalization
+                    ↓
+       Embedding-based catalog search
+                    ↓
+          Lexical relevance reranking
+                    ↓
+        Stock-aware substitution choice
+                    ↓
+       Reviewable checklist in the UI
+                    ↓
+             User confirms cart
+```
+
+The assistant also supports:
+
+- Specific product and availability requests
+- Cheapest and most expensive catalog queries
+- General grocery-related conversation
+- Out-of-stock alternatives
+
+## Application data flow
+
+Every assistant request moves through the same high-level pipeline:
+
+```text
+Prompt
+  → Intent classification
+  → Service selection
+  → External model/database calls
+  → Typed response
+  → Checklist review
+  → Cart confirmation
+```
+
+In the implementation, that pipeline maps to:
+
+1. **Prompt** — The React UI sends `{ "prompt": "..." }` to `POST /api/blinkit-assistant`.
+2. **Intent classification** — `intent_service.py` asks Gemini to classify the request as chat, inventory, recipe extraction, or catalog query.
+3. **Service selection** — `assistant_service.py` dispatches to the appropriate catalog, checklist, recipe, or chat path.
+4. **External model/database calls** — The selected service uses Gemini, Hugging Face embeddings, and/or PostgreSQL with pgvector.
+5. **Typed response** — Pydantic-backed structures return either a chat message or a checklist containing matched SKUs, prices, pack sizes, stock state, and substitutions.
+6. **Checklist review** — The frontend displays the proposed items and lets the user select or unselect them.
+7. **Cart confirmation** — Only the user's selected items are converted into cart products and added to the browser-memory cart.
+
+## Demo
+
+Run the project locally using the setup below, then try:
+
+- `Give me everything I need to make paneer tikka`
+- `Find olive oil and add it to my list`
+- `What is the cheapest dairy item?`
+- `Is paneer available?`
+
+The assistant UI is available at `/assistant`. The static storefront is available at `/blinkit`, and the browser-memory cart is available at `/cart`.
+
+For a portfolio deployment, the next presentation step is to publish the two services described in [render.yaml](render.yaml), add a short walkthrough video, and place the live demo URL here.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-	 Shopper --> UI[React 19 + Vite]
-	 UI -->|POST /api/blinkit-assistant| API[FastAPI]
-	 API -->|Structured intent and recipe extraction| Gemini[Google Gemini]
-	 API -->|384-dimensional query vector| Model[all-MiniLM-L6-v2]
-	 Model --> API
-	 API -->|Cosine-distance candidate search| DB[(PostgreSQL + pgvector)]
-	 DB -->|Top 100 candidates| Rank[Lexical relevance reranker]
-	 Rank --> API
-	 API -->|chat or staged checklist| UI
-	 UI -->|User confirms selected items| Cart[In-memory assistant cart]
-	 UI -->|/blinkit and /cart| Storefront[Static replica products]
+    Shopper --> UI[React 19 + Vite]
+    UI -->|POST /api/blinkit-assistant| Route[FastAPI route]
+    Route --> Assistant[Assistant service]
+    Assistant --> Intent[Intent service]
+    Intent --> Gemini[Gemini client]
+    Assistant --> Recipe[Recipe service]
+    Assistant --> Checklist[Checklist service]
+    Recipe --> Catalog[Catalog service]
+    Checklist --> Catalog
+    Catalog --> Embeddings[Hugging Face embeddings]
+    Catalog --> Repository[Catalog repository]
+    Repository --> DB[(PostgreSQL + pgvector)]
+    DB --> Rerank[Lexical relevance reranker]
+    Rerank --> UI
+    UI --> Cart[Browser-memory cart]
 ```
 
-The assistant separates language understanding from catalog retrieval. For a recipe request, Gemini emits schema-constrained JSON containing the dish and ingredient names, quantities, and pantry-staple flags. The backend normalizes ingredient terminology, encodes each ingredient with `all-MiniLM-L6-v2`, asks pgvector for the 100 nearest catalog rows, then reranks those candidates using token overlap, exact phrase matches, category signals, and penalties for likely processed-product drift. The selected SKU, pack size, price, stock state, and any alternative are returned for customer review. Direct product requests follow the same retrieval path; catalog price questions use SQL filtering and ordering.
+### Code boundaries
 
-The Vite development server proxies `/api` to FastAPI on port `8000`. The `/blinkit` and `/cart` routes instead use a hard-coded product list and browser-memory cart. They are deliberately separate from the database-backed AI flow today.
+```text
+backend/main.py
+  FastAPI application setup, CORS, and route registration
 
-## Technical Feats & Benchmark Status
+backend/app/api/routes/
+  HTTP adapters for assistant and health endpoints
 
-- Uses a local 384-dimensional `all-MiniLM-L6-v2` model for query and catalog embeddings, while reserving Gemini for language interpretation rather than embedding every query remotely.
-- Combines vector candidate generation with a domain-specific lexical reranker to mitigate semantically close but operationally wrong matches (for example, a processed product returned for a raw ingredient request).
-- Models ingredient-to-SKU matches, availability, and substitution details in typed backend response objects; the frontend tracks checklist selection and only adds confirmed items to its cart.
-- Supports price extrema queries with SQL filtering and ordering over in-stock catalog entries.
-- No latency, throughput, or relevance benchmark is currently recorded in the repository. The current retrieval query orders by vector distance without creating an ANN index, so performance should be measured before making scale claims.
+backend/app/services/
+  Intent routing, recipe extraction, catalog matching,
+  checklist creation, and request orchestration
 
-## Developer Experience (Quick Start)
+backend/app/clients/
+  Gemini, Hugging Face, and PostgreSQL integrations
 
-Prerequisites: Python 3.10+, Node.js 20.19+ or 22.12+, a PostgreSQL database with pgvector, and a Gemini API key.
+backend/app/repositories/
+  SQL queries for catalog retrieval and price queries
 
-1. **Create the catalog table** in a fresh development database:
+backend/app/models/
+  Pydantic API models and Gemini response schemas
+```
 
-	```sql
-	CREATE EXTENSION IF NOT EXISTS vector;
+The route layer remains intentionally thin. Services contain business behavior, repositories contain SQL, and clients contain external-system integration.
 
-	CREATE TABLE grocery_catalog (
-		 sku_id VARCHAR(50) PRIMARY KEY,
-		 name VARCHAR(255) NOT NULL,
-		 category VARCHAR(100),
-		 pack_size VARCHAR(50),
-		 price NUMERIC(10, 2),
-		 in_stock BOOLEAN,
-		 stock_qty INTEGER,
-		 dark_store_id VARCHAR(50),
-		 embedding VECTOR(384)
-	);
-	```
+## Retrieval and matching design
 
-2. **Configure and start the API.** Create `backend/.env` with your own credentials, then run the commands below from the repository root. The seeder downloads the BigBasket dataset through `kagglehub`, generates local embeddings, and replaces table contents; use only a disposable development database.
+The catalog search pipeline:
 
-	```dotenv
-	DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
-	GEMINI_API_KEY=your-gemini-api-key
-	```
+1. Prefixes the user query with `Product:`.
+2. Generates a query vector with `all-MiniLM-L6-v2`.
+3. Retrieves the top 100 candidates using pgvector distance.
+4. Optionally filters obvious non-food candidates for recipe requests.
+5. Reranks candidates using:
+   - Token overlap
+   - Exact phrase matches
+   - Food-category signals
+   - Fresh-product boosts
+   - Processed-product boosts when explicitly requested
+   - Processed-product penalties when a raw ingredient is requested
+   - Name-length penalties for noisy matches
+6. Returns the top 15 typed `MatchedSKU` results.
 
-	```bash
-	cd backend
-	python -m venv .venv
-	source .venv/bin/activate
-	pip install -r requirements.txt
-	python seed_catalog.py
-	python -m uvicorn main:app --reload --port 8000
-	```
+This layered approach is deliberate: vector search provides recall, while lexical and domain rules improve precision.
 
-3. **Start the UI** in a second terminal:
+## Reliability decisions
 
-	```bash
-	cd recipe-cart-ui
-	npm install
-	npm run dev
-	```
+The assistant is designed to fail explicitly instead of presenting uncertain results as successful actions:
 
-	Open the Vite URL (normally `http://localhost:5173`). The assistant is at `/`, and the static storefront is at `/blinkit`.
+- A product is not considered added merely because it was found.
+- The UI requires the shopper to review and confirm checklist items.
+- Out-of-stock products retain their original match and substitution reason.
+- If every candidate is unavailable, the response says so.
+- If no catalog match exists, the assistant does not create a fake product.
+- Malformed Gemini JSON produces an explicit server error.
+- General chat responses are instructed not to claim catalog searches or cart changes.
 
-	## Deploying to Render
+These boundaries keep language-model output separate from inventory and cart decisions.
 
-	The repository includes `render.yaml` for deploying the FastAPI backend and React static site as two Render services. In Render, create a Blueprint from this repository, then set the `DATABASE_URL` and `GEMINI_API_KEY` secrets for `blinkit-ai-api`. Replace the placeholder `ALLOWED_ORIGINS` value with the final frontend URL, and set `VITE_API_URL` on `blinkit-ai-ui` to the public API URL. `VITE_API_URL` is embedded during the frontend build, so redeploy the UI after changing it.
+## Engineering decisions
 
-	The database must have the `vector` extension and the `grocery_catalog` table before the API can answer requests. Run the catalog setup/seeding steps against the production database only after reviewing them; the seeder replaces existing catalog rows.
+### Why Gemini is not used for catalog retrieval
 
-## API Contract
+Gemini is used for language understanding: intent classification, ingredient extraction, and normalization. Product selection comes from the catalog and its embeddings, so results can include concrete SKU, price, pack size, and availability data.
 
-`POST /api/blinkit-assistant` accepts `{"prompt":"Is paneer available?"}`. Responses use `type: "chat"` with a `message`, or `type: "checklist"` with a `message` and product/ingredient `data`. The Vite proxy is development-only; deploy the frontend and API behind an explicitly configured production origin and route.
+### Why vector search is combined with lexical reranking
 
-## Scalability Roadmap
+Embeddings can identify semantically related products but may confuse raw ingredients with pastes, powders, sauces, or non-food products. The reranker adds grocery-specific constraints that are easy to inspect and test.
 
-- **Catalog scale:** add and benchmark a pgvector HNSW or IVFFlat index, inspect query plans, and batch/version embedding generation as catalog updates grow.
-- **Request volume:** pool database connections, isolate or serve the eagerly loaded embedding model independently, and scale stateless API workers only after measuring model memory and concurrent inference behavior.
-- **Inventory correctness:** replace randomized seed availability and browser-memory carts with authoritative inventory, persistent carts, and transactional/idempotent reservation flows; add load and relevance tests before setting SLOs.
+### Why stock selection is separate from product matching
 
-## Operational Notes
+The closest semantic match may be unavailable. Matching and availability are therefore represented separately so the system can preserve the original product, find an alternative, and explain the choice.
+
+### Why the cart requires confirmation
+
+Recipe extraction and product matching are recommendations, not purchases. The staged checklist gives the user control over substitutions and pantry staples.
+
+## Data and database setup
+
+Prerequisites:
+
+- Python 3.10+
+- Node.js 20.19+ or 22.12+
+- PostgreSQL with the pgvector extension
+- Gemini API key
+- Hugging Face token for runtime embeddings
+
+Create the catalog table in a disposable development database:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE grocery_catalog (
+    sku_id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(100),
+    pack_size VARCHAR(50),
+    price NUMERIC(10, 2),
+    in_stock BOOLEAN,
+    stock_qty INTEGER,
+    dark_store_id VARCHAR(50),
+    embedding VECTOR(384)
+);
+```
+
+Create `backend/.env` with your own credentials:
+
+```dotenv
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
+GEMINI_API_KEY=your-gemini-api-key
+HF_TOKEN=your-hugging-face-token
+HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+ALLOWED_ORIGINS=http://localhost:5173
+```
+
+The seeder downloads the BigBasket dataset through `kagglehub`, generates local MiniLM embeddings, assigns sample availability, and replaces the contents of `grocery_catalog`. Use only a disposable development database.
+
+## Run locally
+
+Start the backend:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python seed_catalog.py
+python -m uvicorn main:app --reload --port 8000
+```
+
+Start the frontend in a second terminal:
+
+```bash
+cd recipe-cart-ui
+npm install
+npm run dev
+```
+
+The Vite development server proxies `/api` to `http://127.0.0.1:8000`.
+
+## API contract
+
+### `POST /api/blinkit-assistant`
+
+Request:
+
+```json
+{
+  "prompt": "Is paneer available?"
+}
+```
+
+Chat response:
+
+```json
+{
+  "type": "chat",
+  "message": "..."
+}
+```
+
+Checklist response:
+
+```json
+{
+  "type": "checklist",
+  "message": "...",
+  "data": [
+    {
+      "canonical_name": "paneer",
+      "quantity": "200 g",
+      "is_pantry_staple": false,
+      "selected_sku": {},
+      "is_substituted": false,
+      "raw_matches": []
+    }
+  ]
+}
+```
+
+## Caching strategy
+
+The catalog is fixed for this portfolio project, so catalog-derived computations are good candidates for long-lived, versioned caching if caching is added:
+
+| Data | Suggested TTL |
+| --- | ---: |
+| Product embeddings | 1 year or no expiry |
+| Catalog search results | 1 year or no expiry |
+| Cheapest/most expensive queries | 1 year or no expiry |
+| Recipe ingredient extraction | 1 year with prompt/model versioning |
+| General chat responses | Do not cache by default |
+
+Use versioned keys such as:
+
+```text
+embedding:v1:all-MiniLM-L6-v2:paneer
+catalog-search:v1:paneer
+recipe:v1:butter-chicken
+```
+
+If the catalog, model, prompt, or reranking rules change, increment the version. An in-memory TTL cache is sufficient for a single-process portfolio demo; Redis becomes useful when multiple backend workers need a shared cache.
+
+## Evaluation plan
+
+No relevance benchmark is currently committed. The next meaningful evaluation should use a small labeled query set covering:
+
+- Raw versus processed ingredients
+- Fresh versus packaged products
+- Food versus non-food ambiguity
+- Exact product names
+- Product and category price queries
+- Out-of-stock substitutions
+
+Compare vector-only retrieval with vector retrieval plus lexical reranking using:
+
+- Top-1 accuracy
+- Top-5 recall
+- Processed-product false-match rate
+- Non-food false-match rate
+- Successful substitution rate
+
+Only publish measured results. The retrieval query currently orders by vector distance without an ANN index, so performance claims should be validated with query plans and representative catalog sizes.
+
+## Validation commands
+
+Backend:
+
+```bash
+python -m compileall -q backend
+python -c "import sys; sys.path.insert(0, 'backend'); import main; print(main.app.title)"
+```
+
+Frontend:
+
+```bash
+cd recipe-cart-ui
+npm run lint
+npm run build
+```
+
+## Deployment
+
+[render.yaml](render.yaml) defines separate Render services for the backend and frontend. Configure:
+
+- `DATABASE_URL`
+- `GEMINI_API_KEY`
+- `HF_TOKEN`
+- `ALLOWED_ORIGINS`
+- `VITE_API_URL`
+
+The database must already contain the pgvector extension and `grocery_catalog` table. Review the seeding process before using it against any persistent database because it truncates the catalog.
+
+## Known limitations and roadmap
 
 > [!WARNING]
-> `backend/initialize_catalog.py` contains a hard-coded database connection URL instead of reading `DATABASE_URL`. Do not run it; if that credential is active, rotate it and move connection settings to environment variables. The quick start uses `seed_catalog.py`, which also truncates `grocery_catalog` before loading data.
+> `backend/initialize_catalog.py` contains a hard-coded database connection URL. Do not run it. If that credential is active, rotate it and move the connection settings to environment variables.
 
-- The full seed assigns availability randomly; it is sample data, not live inventory.
-- The backend loads the sentence-transformers model at process startup. The initial run downloads model files, and each API process keeps the model in memory.
-- CORS is controlled by the comma-separated `ALLOWED_ORIGINS` environment variable.
+Current limitations:
 
-## Repository Map
+- The seeded catalog uses randomized sample availability, not live inventory.
+- The assistant cart is held in browser memory.
+- There is no persistent user account, checkout, or inventory reservation flow.
+- The current retrieval query has no ANN index.
+- There are no committed automated relevance benchmarks yet.
+- The runtime still uses the legacy `google-generativeai` package and should migrate to Google's current SDK.
+
+Next improvements:
+
+1. Add a deterministic demo mode so the UI remains demonstrable without external API availability.
+2. Add labeled retrieval and substitution tests.
+3. Add versioned caching for fixed catalog-derived data.
+4. Benchmark and add an HNSW or IVFFlat pgvector index.
+5. Add connection pooling and persistent carts.
+6. Record a short walkthrough showing recipe extraction, matching, substitution, and confirmation.
+
+## Repository map
 
 ```text
 backend/
-  main.py                 FastAPI app setup, middleware, and route registration
-  app/
-    api/routes/           HTTP endpoints for the assistant and health check
-    clients/               Gemini, Hugging Face, and PostgreSQL integrations
-    core/config.py         Environment-backed application settings
-    models/                API and LLM data schemas
-    repositories/          Catalog SQL queries
-    services/              Intent, catalog, recipe, checklist, and assistant logic
-  seed_catalog.py         BigBasket ingestion and local embedding generation
-  initialize_catalog.py   Small sample initializer (unsafe as committed; see warning)
+├── main.py
+├── app/
+│   ├── api/routes/
+│   │   ├── assistant.py
+│   │   └── health.py
+│   ├── clients/
+│   │   ├── embeddings_client.py
+│   │   ├── gemini_client.py
+│   │   └── postgres_client.py
+│   ├── core/config.py
+│   ├── models/schemas.py
+│   ├── repositories/catalog_repository.py
+│   └── services/
+│       ├── assistant_service.py
+│       ├── catalog_service.py
+│       ├── checklist_service.py
+│       ├── intent_service.py
+│       └── recipe_service.py
+├── seed_catalog.py
+└── initialize_catalog.py
+
 recipe-cart-ui/
-  src/App.jsx             Assistant chat, checklist review, and in-memory cart
-  blinkit-replica/        Static storefront, local search, categories, and cart UI
-```
-
-## Development Commands
-
-Run from `recipe-cart-ui`:
-
-```bash
-npm run dev       # Vite development server
-npm run build     # Production bundle
-npm run lint      # ESLint
-npm run preview   # Serve the production bundle locally
+├── src/App.jsx
+└── blinkit-replica/
+    └── App.jsx
 ```
